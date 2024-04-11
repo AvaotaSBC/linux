@@ -516,7 +516,6 @@ LINUXINCLUDE    := \
 		-I$(objtree)/arch/$(SRCARCH)/include/generated \
 		$(if $(building_out_of_srctree),-I$(srctree)/include) \
 		-I$(objtree)/include \
-		-I$(srctree)/bsp/include \
 		$(USERINCLUDE)
 
 KBUILD_AFLAGS   := -D__ASSEMBLY__ -fno-PIE
@@ -677,7 +676,6 @@ drivers-y	:= drivers/ sound/
 drivers-$(CONFIG_SAMPLES) += samples/
 drivers-$(CONFIG_NET) += net/
 drivers-y	+= virt/
-drivers-y	+= bsp/drivers/
 libs-y		:= lib/
 endif # KBUILD_EXTMOD
 
