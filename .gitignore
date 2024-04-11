@@ -108,7 +108,6 @@ modules.order
 patches-*
 
 # quilt's files
-patches
 series
 
 # ctags files
