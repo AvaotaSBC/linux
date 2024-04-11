@@ -8,6 +8,7 @@ Options:
   -u, --url        URL               The url of kernel
   -v, --version    VERSION           The version of kernel
   -p, --patch      PATCHFILE         The patch file of kernel
+  -b, --branch     BRANCH NAME       The branch of dst kernel
   -h, --help                         Show command help.
 "
 
@@ -21,6 +22,7 @@ default_param() {
     URL=https://cdn.kernel.org/pub/linux/kernel/v5.x/
     PATCH=linux-5.15.patch
     VERSION=linux-5.15.154
+    BRANCH=linux-5.15
 }
 
 parseargs()
@@ -47,6 +49,10 @@ parseargs()
             PATCH=`echo $2`
             shift
             shift
+        elif [ "x$1" == "x-b" -o "x$1" == "x--branch" ]; then
+            BRANCH=`echo $2`
+            shift
+            shift
         else
             echo `date` - ERROR, UNKNOWN params "$@"
             return 2
@@ -56,6 +62,7 @@ parseargs()
 
 HOST_ARCH=$(arch)
 ROOT_PATH=$(pwd)
+DATE=$(date)
 PATCH_PATH="patches"
 TARBALL="tar.xz"
 
@@ -76,6 +83,27 @@ cd kernel/${VERSION}
 tar xf ${VERSION}.${TARBALL}
 cd ${VERSION}
 
+echo Applying Patches
+
 cp -raf ${ROOT_PATH}/${PATCH_PATH}/${PATCH} .
 patch --binary -p1 < ${PATCH}
+cd ${ROOT_PATH}
+
+echo Clone old kernel
+git clone https://github.com/AvaotaSBC/linux.git -b linux-5.15 kernel/dst/${BRANCH}/${BRANCH}
+cd kernel/dst/${BRANCH}/${BRANCH}
+
+echo Merge old kernel
+mv .git ../
+rm -rf *
+cp -ravf ${ROOT_PATH}/kernel/${VERSION}/${VERSION}/* .
+mv ../.git .
+
+echo Git commit to arch
+git add .
+git commit -m "${DATE} Kernel update"
+git push -f
+
+
+
 
