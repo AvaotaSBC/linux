@@ -53,7 +53,7 @@ __chk_nr()
 	printf "%-50s" "$msg"
 	if [ $nr != $expected ]; then
 		echo "[ fail ] expected $expected found $nr"
-		ret=${KSFT_FAIL}
+		ret=$test_cnt
 	else
 		echo "[  ok  ]"
 	fi
@@ -88,10 +88,10 @@ wait_msk_nr()
 	printf "%-50s" "$msg"
 	if [ $i -ge $timeout ]; then
 		echo "[ fail ] timeout while expecting $expected max $max last $nr"
-		ret=${KSFT_FAIL}
+		ret=$test_cnt
 	elif [ $nr != $expected ]; then
 		echo "[ fail ] expected $expected found $nr"
-		ret=${KSFT_FAIL}
+		ret=$test_cnt
 	else
 		echo "[  ok  ]"
 	fi
