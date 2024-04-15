@@ -56,7 +56,7 @@ parseargs()
             shift
             shift
         elif [ "x$1" == "x-t" -o "x$1" == "x--type" ]; then
-            BRANCH=`echo $2`
+            TYPE=`echo $2`
             shift
             shift
         else
@@ -84,13 +84,18 @@ mkdir -p kernel/${VERSION}
 
 # Download kernel source code
 echo Downloading kernel source code
-if [ "$TYPE" = "LTS" ]; then
+
+if [ "x$TYPE" = "xLTS" ]; then
     TARBALL="tar.xz"
-    wget ${URL}/${VERSION}.${TARBALL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
 else
     TARBALL="tar.gz"
-    wget ${URL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
 fi
+
+if [ "${URL: -1}" = "/" ]; then
+    URL="${URL:0:len-1}"
+fi
+
+wget ${URL}/${VERSION}.${TARBALL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
 
 # Unarchive Kernel
 echo Unarchive Kernel
@@ -121,7 +126,14 @@ cd kernel/dst/${BRANCH}/${BRANCH}
 echo Merging old kernel
 mv .git ../
 rm -rf *
-cp -raf ${ROOT_PATH}/kernel/${VERSION}/${VERSION}/. .
+
+if [ "x$TYPE" = "xLTS" ]; then
+    cp -raf ${ROOT_PATH}/kernel/${VERSION}/${VERSION}/. .
+else
+    cp -raf ${ROOT_PATH}/kernel/${VERSION}/. .
+    rm -rf *.tar.gz
+fi
+
 mv ../.git .
 
 # Git commit to archive
