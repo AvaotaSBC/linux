@@ -11,6 +11,7 @@ Options:
   -u, --url        URL               The url of kernel
   -v, --version    VERSION           The version of kernel
   -b, --branch     BRANCH NAME       The branch of dst kernel
+  -t, --type       KERNEL TYPE       The kernel type: LTS from kernel.org, AOSP kernel
   -h, --help                         Show command help.
 "
 
@@ -26,6 +27,7 @@ default_param() {
     URL=https://cdn.kernel.org/pub/linux/kernel/v5.x/
     VERSION=linux-5.15.154
     BRANCH=linux-5.15
+    TYPE=LTS
 }
 
 # Function to parse command line arguments
@@ -53,6 +55,10 @@ parseargs()
             BRANCH=`echo $2`
             shift
             shift
+        elif [ "x$1" == "x-t" -o "x$1" == "x--type" ]; then
+            BRANCH=`echo $2`
+            shift
+            shift
         else
             echo `date` - ERROR, UNKNOWN params "$@"
             return 2
@@ -64,7 +70,6 @@ HOST_ARCH=$(arch)
 ROOT_PATH=$(pwd)
 DATE=$(date)
 PATCH_PATH="patches"
-TARBALL="tar.xz"
 
 # Set default parameters
 default_param
@@ -79,7 +84,13 @@ mkdir -p kernel/${VERSION}
 
 # Download kernel source code
 echo Downloading kernel source code
-wget ${URL}/${VERSION}.${TARBALL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
+if [ "$TYPE" = "LTS" ]; then
+    TARBALL="tar.xz"
+    wget ${URL}/${VERSION}.${TARBALL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
+else
+    TARBALL="tar.gz"
+    wget ${URL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
+fi
 
 # Unarchive Kernel
 echo Unarchive Kernel
