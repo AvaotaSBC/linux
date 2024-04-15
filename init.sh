@@ -106,6 +106,7 @@ cd ${VERSION}
 # Copy BSP files
 echo Copying BSP files
 cp -raf ${ROOT_PATH}/bsp .
+cp -raf ${ROOT_PATH}/.github .
 
 # Applying Patches and Copy overlays, CI
 echo Applying Patches and overlays
