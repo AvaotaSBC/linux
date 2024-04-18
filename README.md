@@ -8,6 +8,7 @@ Kernel source tree for AvaotaSBC-provided kernel builds.
 | [Linux 5.10 LTS](https://github.com/AvaotaSBC/linux/tree/linux-5.10) | Linux LTS Kernel       | https://cdn.kernel.org/pub/linux/kernel/v5.x/                | linux-5.10.214        |
 | [Linux 5.15 LTS](https://github.com/AvaotaSBC/linux/tree/linux-5.15) | Linux LTS Kernel       | https://cdn.kernel.org/pub/linux/kernel/v5.x/                | linux-5.15.153        |
 | [Linux 6.1 AOSP](https://github.com/AvaotaSBC/linux/tree/linux-6.1-aosp) | Android Common Kernels | https://android.googlesource.com/kernel/common/+/refs/heads/android14-6.1-2023-10 | android14-6.1-2023-10 |
+| [openEuler-22.03-LTS-SP2](https://github.com/AvaotaSBC/linux/tree/linux-5.10-oe) | openEuler 22.03 LTS SP2 Kernel      | https://gitee.com/openeuler/kernel.git                | openEuler 22.03 LTS SP2        |
 
 ## AutoCI Branch Update
 
