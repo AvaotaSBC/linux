@@ -12,6 +12,7 @@ Options:
   -v, --version    VERSION           The version of kernel
   -b, --branch     BRANCH NAME       The branch of dst kernel
   -t, --type       KERNEL TYPE       The kernel type: LTS from kernel.org, AOSP kernel
+  -d, --download   KERNEL DOWNLOAD   The kernel download type: GIT, TAR
   -h, --help                         Show command help.
 "
 
@@ -28,6 +29,7 @@ default_param() {
     VERSION=linux-5.15.154
     BRANCH=linux-5.15
     TYPE=LTS
+    DOWNLOAD=TAR
 }
 
 # Function to parse command line arguments
@@ -57,6 +59,10 @@ parseargs()
             shift
         elif [ "x$1" == "x-t" -o "x$1" == "x--type" ]; then
             TYPE=`echo $2`
+            shift
+            shift
+        elif [ "x$1" == "x-d" -o "x$1" == "x--download" ]; then
+            DOWNLOAD=`echo $2`
             shift
             shift
         else
@@ -95,13 +101,18 @@ if [ "${URL: -1}" = "/" ]; then
     URL="${URL:0:len-1}"
 fi
 
-wget ${URL}/${VERSION}.${TARBALL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
-
-# Unarchive Kernel
-echo Unarchive Kernel
-cd kernel/${VERSION}
-tar xf ${VERSION}.${TARBALL}
-cd ${VERSION}
+# Download and Unarchive Kernel
+if [ "x$DOWNLOAD" = "xTAR" ]; then
+    wget ${URL}/${VERSION}.${TARBALL} -qO kernel/${VERSION}/${VERSION}.${TARBALL}
+    echo Unarchive Kernel
+    cd kernel/${VERSION}
+    tar xf ${VERSION}.${TARBALL}
+    cd ${VERSION}
+else
+    git clone ${URL} -b ${VERSION} --depth=1 ${VERSION}
+    cd ${VERSION}
+    rm -rf .git
+fi
 
 # Copy BSP files
 echo Copying BSP files
@@ -128,11 +139,15 @@ echo Merging old kernel
 mv .git ../
 rm -rf *
 
-if [ "x$TYPE" = "xLTS" ]; then
-    cp -raf ${ROOT_PATH}/kernel/${VERSION}/${VERSION}/. .
+if [ "x$DOWNLOAD" = "xTAR" ]; then
+    if [ "x$TYPE" = "xLTS" ]; then
+        cp -raf ${ROOT_PATH}/kernel/${VERSION}/${VERSION}/. .
+    else
+        cp -raf ${ROOT_PATH}/kernel/${VERSION}/. .
+        rm -rf *.tar.gz
+    fi
 else
-    cp -raf ${ROOT_PATH}/kernel/${VERSION}/. .
-    rm -rf *.tar.gz
+    cp -raf ${ROOT_PATH}/${VERSION}/. .
 fi
 
 mv ../.git .
