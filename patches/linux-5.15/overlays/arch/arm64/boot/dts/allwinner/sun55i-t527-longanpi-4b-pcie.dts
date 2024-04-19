@@ -2591,6 +2591,7 @@
 	reset-gpios = <&pio PH 11 GPIO_ACTIVE_HIGH>;
 	wake-gpios = <&pio PH 12 GPIO_ACTIVE_HIGH>;
 	pcie3v3-supply = <&reg_bldo1>;
+	pcie1v8-supply = <&reg_dcdc3>;
 	clk-freq-100M;
 	status = "okay";
 };
