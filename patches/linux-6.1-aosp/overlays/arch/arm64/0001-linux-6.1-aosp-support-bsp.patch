@@ -1,0 +1,46 @@
+diff --git a/Kconfig b/Kconfig
+index 57a142d8d..36bea5630 100644
+--- a/Kconfig
++++ b/Kconfig
+@@ -9,6 +9,8 @@ source "scripts/Kconfig.include"
+ 
+ source "init/Kconfig"
+ 
++source "bsp/Kconfig"
++
+ source "kernel/Kconfig.freezer"
+ 
+ source "fs/Kconfig.binfmt"
+diff --git a/Makefile b/Makefile
+index 570569a25..0e50b8337 100644
+--- a/Makefile
++++ b/Makefile
+@@ -570,6 +570,7 @@ USERINCLUDE    := \
+ 		-I$(srctree)/arch/$(SRCARCH)/include/uapi \
+ 		-I$(objtree)/arch/$(SRCARCH)/include/generated/uapi \
+ 		-I$(srctree)/include/uapi \
++		-I$(srctree)/bsp/include \
+ 		-I$(objtree)/include/generated/uapi \
+                 -include $(srctree)/include/linux/compiler-version.h \
+                 -include $(srctree)/include/linux/kconfig.h
+@@ -770,6 +771,7 @@ ifeq ($(KBUILD_EXTMOD),)
+ # Objects we will link into vmlinux / subdirs we need to visit
+ core-y		:=
+ drivers-y	:=
++drivers-y	+= bsp/
+ libs-y		:= lib/
+ endif # KBUILD_EXTMOD
+ 
+diff --git a/scripts/Makefile.lib b/scripts/Makefile.lib
+index 2e20d34cf..9c2cbe507 100644
+--- a/scripts/Makefile.lib
++++ b/scripts/Makefile.lib
+@@ -244,7 +244,7 @@ ld_flags       = $(KBUILD_LDFLAGS) $(ldflags-y) $(LDFLAGS_$(@F))
+ 
+ # ANDROID: Allow DTC_INCLUDE to be set by the BUILD_CONFIG. This allows one to
+ # compile an out-of-tree device tree.
+-DTC_INCLUDE    += $(srctree)/scripts/dtc/include-prefixes
++DTC_INCLUDE    += $(srctree)/scripts/dtc/include-prefixes $(srctree)/bsp/include
+ 
+ dtc_cpp_flags  = -Wp,-MMD,$(depfile).pre.tmp -nostdinc                    \
+ 		 $(addprefix -I,$(DTC_INCLUDE))                          \
