@@ -3437,3 +3437,20 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 		};
 	};
 };
+
+&pd1 {
+	/* pk */
+	pd1_vi@A523_PCK_VI {
+		ppu-always-on;
+	};
+
+	/* pd */
+	pd1_vo0@A523_PCK_VO0 {
+		ppu-always-on;
+	};
+
+	/* pj */
+	pd1_vo1@A523_PCK_VO1 {
+		ppu-always-on;
+	};
+};
