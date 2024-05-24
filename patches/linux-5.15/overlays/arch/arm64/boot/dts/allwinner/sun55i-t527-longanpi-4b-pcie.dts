@@ -500,7 +500,7 @@
 };
 
 &dlcd0 {
-	status = "okay";
+	status = "disabled";
 	panel = <&lvds_panel0>;
 	ports {
 		tcon0_out: port@1 {
