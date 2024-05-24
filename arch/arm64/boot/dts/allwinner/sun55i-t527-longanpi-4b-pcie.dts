@@ -4,11 +4,11 @@
 
 /dts-v1/;
 
-#include "sun55i-t527.dtsi"
+#include "sun55iw3p1.dtsi"
 
 /{
 	board = "T527", "T527-LM4B";
-	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
+	compatible = "allwinner,t527", "Sipeed,T527-LM4B";
 
 	aliases {
 		pmu0 = &pmu0;
@@ -500,7 +500,7 @@
 };
 
 &dlcd0 {
-	status = "disabled";
+	status = "okay";
 	panel = <&lvds_panel0>;
 	ports {
 		tcon0_out: port@1 {
@@ -825,14 +825,14 @@
 	};
 
 	twi1_pins_default: twi1@0 {
-		pins = "PH2", "PH3";
+		pins = "PL8", "PL9";
 		function = "twi1";
 		drive-strength = <10>;
 		bias-pull-up;
 	};
 
 	twi1_pins_sleep: twi1@1 {
-		pins = "PH2", "PH3";
+		pins = "PL8", "PL9";
 		function = "gpio_in";
 	};
 
@@ -1374,7 +1374,7 @@
 	/* For stability and backwards compatibility, we recommend setting ‘twi_drv_used’ to 1 */
 	twi_drv_used = <1>;
 	twi-supply = <&reg_dcdc4>;
-	status = "disabled";
+	status = "okay";
 };
 
 &twi1 {
@@ -1384,7 +1384,7 @@
 	pinctrl-names = "default", "sleep";
 	/* For stability and backwards compatibility, we recommend setting ‘twi_drv_used’ to 1 */
 	twi_drv_used = <1>;
-	status = "disabled";
+	status = "okay";
 };
 
 &twi2 {
@@ -1428,7 +1428,7 @@
 	/* For stability and backwards compatibility, we recommend setting ‘twi_drv_used’ to 1 */
 	twi_drv_used = <1>;
 	twi-supply = <&reg_dcdc4>;
-	status = "disabled";
+	status = "okay";
 };
 
 &csi_mclk3_pins_a {
@@ -2365,7 +2365,7 @@
 	/* For stability and backwards compatibility, we recommend setting ‘twi_drv_used’ to 1 */
 	twi_drv_used = <1>;
 	twi-supply = <&reg_aldo3>;
-	status = "disabled";
+	status = "okay";
 };
 
 &twi8 {
@@ -2376,7 +2376,7 @@
 	/* For stability and backwards compatibility, we recommend setting ‘twi_drv_used’ to 1 */
 	twi_drv_used = <1>;
 	twi-supply = <&reg_aldo3>;
-	status = "disabled";
+	status = "okay";
 };
 
 &sdc2 {
@@ -2556,21 +2556,14 @@
 };
 
 &ehci1 {
+	drvvbus-supply = <&reg_usb1_vbus>;
 	phy_range = <0x153>;
 	status = "okay";
 };
 
 &ohci1 {
+	drvvbus-supply = <&reg_usb1_vbus>;
 	phy_range = <0x153>;
-	status = "okay";
-};
-
-&usbc2 {
-	device_type = "usbc2";
-	status = "okay";
-};
-
-&u2phy {
 	status = "okay";
 };
 
@@ -2582,7 +2575,7 @@
  */
 
 &combophy {
-	resets = <&ccu RST_BUS_PCIE_USB3>;
+	clk-freq-100M;
 	phy_use_sel = <0>; /* 0:PCIE; 1:USB3 */
 	status = "okay";
 };
@@ -2591,7 +2584,6 @@
 	reset-gpios = <&pio PH 11 GPIO_ACTIVE_HIGH>;
 	wake-gpios = <&pio PH 12 GPIO_ACTIVE_HIGH>;
 	pcie3v3-supply = <&reg_bldo1>;
-	pcie1v8-supply = <&reg_dcdc3>;
 	clk-freq-100M;
 	status = "okay";
 };
@@ -3294,10 +3286,10 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 	pinctrl-0 = <&gmac0_pins_default>;
 	pinctrl-1 = <&gmac0_pins_sleep>;
 	sunxi,phy-clk-type = <0>;
-	tx-delay = <1>;
-	rx-delay = <3>;
+	tx-delay = <3>;
+	rx-delay = <4>;
 
-	gmac3v3-supply = <&reg_cldo3>;
+	gmac3v3-supply = <&reg_cldo4>;
 	status = "okay";
 };
 
@@ -3308,15 +3300,16 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 	pinctrl-0 = <&gmac1_pins_default>;
 	pinctrl-1 = <&gmac1_pins_sleep>;
 	aw,soc-phy25m;
-	tx-delay = <1>;
-	rx-delay = <1>;
-	dwmac3v3-supply = <&reg_cldo3>;
+	tx-delay = <3>;
+	rx-delay = <4>;
+	dwmac3v3-supply = <&reg_cldo4>;
 	status = "okay";
 	mdio1: mdio1@1 {
 		gmac1_phy0: ethernet-phy@1 {
 			reset-gpios = <&pio PJ 16 GPIO_ACTIVE_LOW>;
 		};
 	};
+
 };
 
 &npu {
