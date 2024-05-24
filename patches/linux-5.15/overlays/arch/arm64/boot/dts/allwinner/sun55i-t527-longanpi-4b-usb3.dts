@@ -4,11 +4,11 @@
 
 /dts-v1/;
 
-#include "sun55iw3p1.dtsi"
+#include "sun55i-t527.dtsi"
 
 /{
 	board = "T527", "T527-LM4B";
-	compatible = "allwinner,t527", "Sipeed,T527-LM4B";
+	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
 
 	aliases {
 		pmu0 = &pmu0;
