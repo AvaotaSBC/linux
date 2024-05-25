@@ -11,13 +11,13 @@
 	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
 };
 
-&combophy {
-	resets = <&ccu RST_BUS_PCIE_USB3>;
-	phy_use_sel = <1>; /* 0:PCIE; 1:USB3 */
+&xhci2 {
+	dr_mode = "host";
 	status = "okay";
 };
 
-&xhci2 {
-	dr_mode = "host";
+&combophy {
+	resets = <&ccu RST_BUS_PCIE_USB3>;
+	phy_use_sel = <1>; /* 0:PCIE; 1:USB3 */
 	status = "okay";
 };
