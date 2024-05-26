@@ -11,6 +11,11 @@
 	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
 };
 
+&usbc2 {
+	device_type = "usbc2";
+	status = "okay";
+};
+
 &xhci2 {
 	dr_mode = "host";
 	status = "okay";
