@@ -3348,6 +3348,11 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 	ddc_en_io_ctrl = <0>;
 	power_io_ctrl = <0>;
 
+	inno_phy = <
+		 25000 165000 0x01000102 0x1c1c1c1c 0x00000000 0x00000000
+		165000 340000 0x01040506 0x1c1c1c1c 0x00000000 0x03030300
+		340000 600000 0x010f0f0f 0x1c1c1c1c 0x00000000 0x00000000>;
+
 	status = "okay";
 };
 
