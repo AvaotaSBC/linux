@@ -7,7 +7,8 @@
 #include "sun55i-t527-longanpi-4b.dtsi"
 
 /{
-	board = "T527", "T527-LM4B(PCIE Mode)";
+	model = "LonganPi 4B(PCIE Mode)";
+	board = "T527", "T527-LM4B";
 	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
 };
 
@@ -28,7 +29,7 @@
 	reset-gpios = <&pio PH 11 GPIO_ACTIVE_HIGH>;
 	wake-gpios = <&pio PH 12 GPIO_ACTIVE_HIGH>;
 	pcie3v3-supply = <&reg_bldo1>;
-	pcie1v8-supply = <&reg_bldo4>;
+	pcie1v8-supply = <&reg_cldo1>;
 	clk-freq-100M;
 	status = "okay";
 };

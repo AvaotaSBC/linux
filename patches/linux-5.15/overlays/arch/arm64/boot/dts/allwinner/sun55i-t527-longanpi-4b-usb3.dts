@@ -7,7 +7,8 @@
 #include "sun55i-t527-longanpi-4b.dtsi"
 
 /{
-	board = "T527", "T527-LM4B(USB3 Mode)";
+	model = "LonganPi 4B(USB3 Mode)";
+	board = "T527", "T527-LM4B";
 	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
 };
 
