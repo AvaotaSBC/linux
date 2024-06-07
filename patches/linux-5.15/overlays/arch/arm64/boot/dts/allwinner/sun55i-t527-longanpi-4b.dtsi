@@ -2465,7 +2465,7 @@
 		compatible    = "allwinner,sunxi-wlan";
 		clocks;
 		clock-names;
-		wlan_power    = "axp2202-aldo3", "axp2202-bldo1"; /* vcc-pl/vcc-pg/vcc-pm */
+		wlan_power    = "axp2202-bldo1", "axp2202-bldo2"; /* vcc-pl/vcc-pg/vcc-pm */
 		wlan_power_vol= <3300000>, <1800000>;
 		wlan_busnum   = <0x1>;
 		wlan_regon    = <&r_pio PM 1 GPIO_ACTIVE_HIGH>;
@@ -2478,7 +2478,7 @@
 		compatible    = "allwinner,sunxi-bt";
 		clocks;
 		clock-names;
-		bt_power      = "axp2202-aldo3", "axp2202-bldo1"; /* vcc-pl/vcc-pg/vcc-pm */
+		bt_power      = "axp2202-bldo1", "axp2202-bldo2"; /* vcc-pl/vcc-pg/vcc-pm */
 		bt_power_vol  = <3300000>, <1800000>;
 		bt_rst_n      = <&r_pio PM 2 GPIO_ACTIVE_LOW>;
 	};
