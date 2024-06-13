@@ -1,6 +1,6 @@
 # Linux Kernel Source Tree
 
-Kernel source tree for AvaotaSBC-provided kernel builds.
+Kernel source tree for AvaotaSBC-provided kernel builds. 
 
 ## Kernel Branches
 | Kernel Source                                                | Kernel Type            | Kernel Source                                                | Kernel Version        |
