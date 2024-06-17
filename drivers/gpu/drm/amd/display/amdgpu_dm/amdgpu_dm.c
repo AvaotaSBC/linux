@@ -2772,6 +2772,7 @@ static int dm_resume(void *handle)
 			dc_stream_release(dm_new_crtc_state->stream);
 			dm_new_crtc_state->stream = NULL;
 		}
+		dm_new_crtc_state->base.color_mgmt_changed = true;
 	}
 
 	for_each_new_plane_in_state(dm->cached_state, plane, new_plane_state, i) {
@@ -6219,7 +6220,7 @@ get_highest_refresh_rate_mode(struct amdgpu_dm_connector *aconnector,
 		}
 	}
 
-	aconnector->freesync_vid_base = *m_pref;
+	drm_mode_copy(&aconnector->freesync_vid_base, m_pref);
 	return m_pref;
 }
 
@@ -6333,8 +6334,10 @@ create_stream_for_sink(struct amdgpu_dm_connector *aconnector,
 				 is_freesync_video_mode(&mode, aconnector);
 		if (recalculate_timing) {
 			freesync_mode = get_highest_refresh_rate_mode(aconnector, false);
-			saved_mode = mode;
-			mode = *freesync_mode;
+			drm_mode_copy(&saved_mode, &mode);
+			saved_mode.picture_aspect_ratio = mode.picture_aspect_ratio;
+			drm_mode_copy(&mode, freesync_mode);
+			mode.picture_aspect_ratio = saved_mode.picture_aspect_ratio;
 		} else {
 			decide_crtc_timing_for_drm_display_mode(
 				&mode, preferred_mode, scale);
