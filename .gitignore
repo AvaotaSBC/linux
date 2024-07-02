@@ -162,3 +162,4 @@ sphinx_*/
 
 # Kernel DIr
 kernel/
+drivers/
