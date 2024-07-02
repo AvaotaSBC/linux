@@ -12,9 +12,16 @@
 	compatible = "allwinner,t527", "arm,sun55iw3p1", "Sipeed,T527-LM4B";
 };
 
+/*
+ * clk-freq-24M : use Internal 24M reference clock
+ * clk-freq-100M: use Internal 100M reference clock
+ *
+ * Pick one of two.
+ */
+
 &combophy {
 	resets = <&ccu RST_BUS_PCIE_USB3>;
-	phy_use_sel = <0>; /* 0:PCIE; 1:USB3; 2:PCIE_USB3_U2 */
+	phy_use_sel = <0>; /* 0:PCIE; 1:USB3 */
 	status = "okay";
 };
 

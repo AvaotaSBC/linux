@@ -293,7 +293,7 @@
 		};
 	};
 
-	backlight0: backlight0 {
+	lvds_panel0_backlight: backlight0 {
 		compatible = "pwm-backlight";
 		status = "okay";
 		brightness-levels = <
@@ -333,8 +333,110 @@
 		enable-gpios = <&pio PI 2 GPIO_ACTIVE_HIGH>;
 		pwms = <&pwm0 4 50000 0>;
 	};
-	
-	backlight1: backlight1 {
+
+	lvds_panel0: panel@0 {
+		compatible = "BP101WX1";
+		status = "okay";
+		reg = <0>;
+		power0-supply = <&reg_cldo3>;
+		power1-supply = <&reg_dcdc4>;
+		power2-supply = <&reg_cldo1>;
+
+		backlight = <&lvds_panel0_backlight>;
+
+		lcd_if              = <3>;
+		lcd_width           = <150>;
+		lcd_height          = <94>;
+
+		pinctrl-0 = <&lvds0_pins_a>;
+		pinctrl-1 = <&lvds0_pins_b>;
+		pinctrl-names = "active","sleep";
+
+		panel-timing {
+			clock-frequency = <74871600>; /* pixel clock */
+			hback-porch = <88>;
+			hactive = <1280>;
+			hfront-porch = <83>;
+			hsync-len = <18>;
+			vback-porch = <23>;
+			vactive = <800>;
+			vfront-porch = <37>;
+			vsync-len = <10>;
+
+			// unused now
+			/*
+			hsync-active = <0>;
+			vsync-active = <0>;
+			de-active = <1>;
+			pixelclk-active = <1>;
+			*/
+		};
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			lvds_panel0_in: port@0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0>;
+				lvds_panel0_in_lcd0: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&tcon0_out_panel>;
+				};
+			};
+		};
+	};
+
+	lvds_panel1: panel@1 {
+		compatible = "BP101WX1";
+		status = "disabled";
+		reg = <1>;
+		power0-supply = <&reg_cldo3>;
+		power1-supply = <&reg_dcdc4>;
+
+		backlight = <&lvds_panel1_backlight>;
+
+		lcd_if              = <3>;
+		lcd_width           = <150>;
+		lcd_height          = <94>;
+
+		pinctrl-0 = <&lvds2_pins_a>;
+		pinctrl-1 = <&lvds2_pins_b>;
+		pinctrl-names = "active","sleep";
+
+		panel-timing {
+			clock-frequency = <74871600>; /* pixel clock */
+			hback-porch = <88>;
+			hactive = <1280>;
+			hfront-porch = <83>;
+			hsync-len = <18>;
+			vback-porch = <23>;
+			vactive = <800>;
+			vfront-porch = <37>;
+			vsync-len = <10>;
+			// unused now
+			/*
+			hsync-active = <0>;
+			vsync-active = <0>;
+			de-active = <1>;
+			pixelclk-active = <1>;
+			*/
+		};
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			lvds_panel1_in: port@0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0>;
+				lvds_panel1_in_lcd2: endpoint@0 {
+					reg = <0>;
+					remote-endpoint = <&tcon4_out_panel>;
+				};
+			};
+		};
+	};
+
+	lvds_panel1_backlight: backlight1 {
 		compatible = "pwm-backlight";
 		status = "disabled";
 		brightness-levels = <
@@ -374,36 +476,6 @@
 		enable-gpios = <&pio PI 5 GPIO_ACTIVE_HIGH>;
 		pwms = <&pwm0 5 5000000 0>;
 	};
-
-	lvds_panel: lvds_panel@0 {
-		compatible = "sunxi-lvds";
-		status = "okay";
-		reg = <0>;
-		power0-supply = <&reg_cldo3>;
-		power1-supply = <&reg_dcdc4>;
-		power2-supply = <&reg_cldo1>;
-		backlight = <&backlight0>;
-		bus-format = <MEDIA_BUS_FMT_RGB888_1X7X4_SPWG>;
-		display-timings {
-			native-mode = <&lvds_timing0>;
-			lvds_timing0: timing0 {
-				clock-frequency = <74871600>;
-				hback-porch = <70>;
-				hactive = <1280>;
-				hfront-porch = <83>;
-				hsync-len = <18>;
-				vback-porch = <13>;
-				vactive = <800>;
-				vfront-porch = <37>;
-				vsync-len = <10>;
-			};
-		};
-		port {
-			lvds_panel_in: endpoint {
-				remote-endpoint = <&lvds_panel_out>;
-			};
-		};
-	};
 };
 
 &de {
@@ -424,30 +496,28 @@
 	status = "okay";
 };
 
-/* DP DRM */
-&tv1 {
-	status = "disabled";
-};
-
 &dlcd0 {
 	status = "disabled";
+	panel = <&lvds_panel0>;
+	ports {
+		tcon0_out: port@1 {
+			tcon0_out_panel: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&lvds_panel0_in_lcd0>;
+			};
+		};
+	};
+
 };
 
 &dlcd2 {
 	status = "disabled";
-};
-
-&lvds0 {
-	status = "disabled";
-	pinctrl-0 = <&lvds0_pins_a>;
-	pinctrl-1 = <&lvds0_pins_b>;
-	pinctrl-names = "active","sleep";
+	panel = <&lvds_panel1>;
 	ports {
-		port@1 {
-			reg = <1>;
-			lvds_panel_out: endpoint@0 {
+		tcon4_out: port@1 {
+			tcon4_out_panel: endpoint@0 {
 				reg = <0>;
-				remote-endpoint = <&lvds_panel_in>;
+				remote-endpoint = <&lvds_panel1_in_lcd2>;
 			};
 		};
 	};
@@ -458,7 +528,7 @@
 };
 
 &dsi1combophy {
-	status = "disabled";
+	status = "okay";
 };
 
 &drm_edp {
@@ -3349,6 +3419,23 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 			type = "critical";
 			hysteresis = <0>;
 		};
+	};
+};
+
+&pd1 {
+	/* pk */
+	pd1_vi@A523_PCK_VI {
+		ppu-always-on;
+	};
+
+	/* pd */
+	pd1_vo0@A523_PCK_VO0 {
+		ppu-always-on;
+	};
+
+	/* pj */
+	pd1_vo1@A523_PCK_VO1 {
+		ppu-always-on;
 	};
 };
 
