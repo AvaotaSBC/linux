@@ -369,7 +369,6 @@
 		enable-gpios = <&pio PI 5 GPIO_ACTIVE_HIGH>;
 		pwms = <&pwm0 5 5000000 0>;
 	};
-
 	lvds_panel: lvds_panel@0 {
 		compatible = "sunxi-lvds";
 		status = "okay";
@@ -425,7 +424,7 @@
 };
 
 &dlcd0 {
-	status = "disabled";
+	status = "okay";
 };
 
 &dlcd2 {
@@ -433,7 +432,8 @@
 };
 
 &lvds0 {
-	status = "disabled";
+	status = "okay";
+//	dual-channel = <0>;
 	pinctrl-0 = <&lvds0_pins_a>;
 	pinctrl-1 = <&lvds0_pins_b>;
 	pinctrl-names = "active","sleep";
