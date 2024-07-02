@@ -28,6 +28,6 @@
 
 &combophy {
 	resets = <&ccu RST_BUS_PCIE_USB3>;
-	phy_use_sel = <1>; /* 0:PCIE; 1:USB3 */
+	phy_use_sel = <1>; /* 0:PCIE; 1:USB3; 2:PCIE_USB3_U2 */
 	status = "okay";
 };
