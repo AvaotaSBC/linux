@@ -1,0 +1,136 @@
+diff --git a/drivers/dma-buf/dma-heap.c b/drivers/dma-buf/dma-heap.c
+index 59d158873f..7c720d945c 100644
+--- a/drivers/dma-buf/dma-heap.c
++++ b/drivers/dma-buf/dma-heap.c
+@@ -49,12 +49,32 @@ static dev_t dma_heap_devt;
+ static struct class *dma_heap_class;
+ static DEFINE_XARRAY_ALLOC(dma_heap_minors);
+ 
+-static int dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
++struct dma_heap *dma_heap_find(const char* name)
++{
++	struct dma_heap *h;
++
++	/* check the name is unique */
++	mutex_lock(&heap_list_lock);
++	list_for_each_entry(h, &heap_list, list) {
++		if (!strcmp(h->name, name)) {
++			mutex_unlock(&heap_list_lock);
++			return h;
++		}
++	}
++	mutex_unlock(&heap_list_lock);
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(dma_heap_find);
++
++struct dma_buf *dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
+ 				 unsigned int fd_flags,
+ 				 unsigned int heap_flags)
+ {
+-	struct dma_buf *dmabuf;
+-	int fd;
++	if (fd_flags & ~DMA_HEAP_VALID_FD_FLAGS)
++		return ERR_PTR(-EINVAL);
++
++	if (heap_flags & ~DMA_HEAP_VALID_HEAP_FLAGS)
++		return ERR_PTR(-EINVAL);
+ 
+ 	/*
+ 	 * Allocations from all heaps have to begin
+@@ -62,9 +82,20 @@ static int dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
+ 	 */
+ 	len = PAGE_ALIGN(len);
+ 	if (!len)
+-		return -EINVAL;
++		return ERR_PTR(-EINVAL);
++
++	return heap->ops->allocate(heap, len, fd_flags, heap_flags);
++}
++EXPORT_SYMBOL_GPL(dma_heap_buffer_alloc);
++
++int dma_heap_bufferfd_alloc(struct dma_heap *heap, size_t len,
++				 unsigned int fd_flags,
++				 unsigned int heap_flags)
++{
++	struct dma_buf *dmabuf;
++	int fd;
+ 
+-	dmabuf = heap->ops->allocate(heap, len, fd_flags, heap_flags);
++	dmabuf = dma_heap_buffer_alloc(heap, len, fd_flags, heap_flags);
+ 	if (IS_ERR(dmabuf))
+ 		return PTR_ERR(dmabuf);
+ 
+@@ -75,6 +106,13 @@ static int dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
+ 	}
+ 	return fd;
+ }
++EXPORT_SYMBOL_GPL(dma_heap_bufferfd_alloc);
++
++void dma_heap_buffer_free(struct dma_buf *dmabuf)
++{
++	dma_buf_put(dmabuf);
++}
++EXPORT_SYMBOL_GPL(dma_heap_buffer_free);
+ 
+ static int dma_heap_open(struct inode *inode, struct file *file)
+ {
+@@ -102,13 +140,7 @@ static long dma_heap_ioctl_allocate(struct file *file, void *data)
+ 	if (heap_allocation->fd)
+ 		return -EINVAL;
+ 
+-	if (heap_allocation->fd_flags & ~DMA_HEAP_VALID_FD_FLAGS)
+-		return -EINVAL;
+-
+-	if (heap_allocation->heap_flags & ~DMA_HEAP_VALID_HEAP_FLAGS)
+-		return -EINVAL;
+-
+-	fd = dma_heap_buffer_alloc(heap, heap_allocation->len,
++	fd = dma_heap_bufferfd_alloc(heap, heap_allocation->len,
+ 				   heap_allocation->fd_flags,
+ 				   heap_allocation->heap_flags);
+ 	if (fd < 0)
+diff --git a/include/linux/dma-heap.h b/include/linux/dma-heap.h
+index 0c05561cad..1b6506c3f9 100644
+--- a/include/linux/dma-heap.h
++++ b/include/linux/dma-heap.h
+@@ -65,4 +65,39 @@ const char *dma_heap_get_name(struct dma_heap *heap);
+  */
+ struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info);
+ 
++/**
++ * dma_heap_find - Returns the registered dma_heap with the specified name
++ * @name: Name of the heap to find
++ */
++struct dma_heap *dma_heap_find(const char* name);
++
++/**
++ * dma_heap_buffer_alloc - Allocate dma-buf from a dma_heap
++ * @heap:	dma_heap to allocate from
++ * @len:	size to allocate
++ * @fd_flags:	flags to set on returned dma-buf fd
++ * @heap_flags:	flags to pass to the dma heap
++ */
++struct dma_buf *dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
++			unsigned int fd_flags,
++			unsigned int heap_flags);
++
++/**
++ * dma_heap_bufferfd_alloc - Allocate dma-buf from a dma_heap
++ * @heap:	dma_heap to allocate from
++ * @len:	size to allocate
++ * @fd_flags:	flags to set on returned dma-buf fd
++ * @heap_flags:	flags to pass to the dma heap
++ */
++int dma_heap_bufferfd_alloc(struct dma_heap *heap, size_t len,
++			unsigned int fd_flags,
++			unsigned int heap_flags);
++
++/** dma_heap_buffer_free - Free dma_buf allocated by dma_heap_buffer_alloc
++ * @dma_buf:    dma_buf to free
++ *
++ * This is really only a simple wrapper to dma_buf_put()
++ */
++void dma_heap_buffer_free(struct dma_buf *);
++
+ #endif /* _DMA_HEAPS_H */

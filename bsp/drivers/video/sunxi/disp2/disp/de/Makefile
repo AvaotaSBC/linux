@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 MIPI_DSI_IP_VERSION ?= 40
 
+ccflags-y += -I $(srctree)/bsp/drivers/video/sunxi/disp2/disp
+
 ifeq ($(CONFIG_ARCH_SUN8IW8),y)
 sub_dir = lowlevel_sun8iw8
 endif
