@@ -8,9 +8,7 @@
  * License version 2.  This program is licensed "as is" without any
  * warranty of any kind, whether express or implied.
  ******************************************************************************/
-
-#include <linux/of_address.h>
-#include "dw_i2cm.h"
+#include "dw_dev.h"
 #include "dw_edid.h"
 
 #define TAG_BASE_BLOCK         0x00
@@ -20,31 +18,80 @@
 #define TAG_LS_EXT             0x50
 #define TAG_MI_EXT             0x60
 
+#define HDMI_IEEE_CODE         (0x000C03)
+#define HDMI_FORUM_IEEE_CODE   (0xC45DD8)
+
+enum cta_edid_tag {
+	/* Reserved: 0 */
+	TAG_ADB        = 1, /* Audio Data Block */
+	TAG_VDB        = 2, /* Video Data Block */
+	TAG_VSDB       = 3, /* Vendor-Specific Data Block */
+	TAG_SADB       = 4, /* Speaker Allocation Data Block */
+	TAG_VESA_DTCDB = 5, /* VESA Display Transfer Characteristic Data Block */
+	/* Reserved: 6 */
+	TAG_Extend     = 7, /* Use Extended Tag */
+};
+
+/* edid data block extern-tag */
+enum cta_edid_extend_tag {
+	EXT_TAG_Video_Cap_DB             = 0, /* Video Capability Data Block */
+	EXT_TAG_Vendor_Specifiv_VDB      = 1, /* Vendor-Specific Video Data Block */
+	EXT_TAG_VESA_Display_Device_DB   = 2, /* VESA Display Device Data Block */
+	EXT_TAG_VESA_VDB                 = 3, /* Reserved: VESA Video Data Block */
+	EXT_TAG_HDMI_VDB                 = 4, /* Reserved: HDMI Video Data Block */
+	EXT_TAG_Colorimetry_DB           = 5, /* Colorimetry Data Block */
+	EXT_TAG_HDR_SMDB                 = 6, /* HDR Static Metadata Data Block */
+	EXT_TAG_HDR_DMDB                 = 7, /* HDR Dynamic Metadata Data Block */
+	/* reserved: 8...12 */
+	EXT_TAG_Video_Format_Per_DB      = 13, /* Video Format Preference Data Block */
+	EXT_TAG_YCbCr420_Video_DB        = 14, /* YCbCr 4:2:0 Video Data Block */
+	EXT_TAG_YCbCr420_Cap_Map_DB      = 15, /* YCbCr 4:2:0 Capability Map Data Block */
+	EXT_TAG_Misc_Audio_Field_DB      = 16, /* Reserved: CTA Miscellaneous Auido Fields */
+	EXT_TAG_Vendor_Specific_ADB      = 17, /* Vendor-Specific Audio Data Block */
+	EXT_TAG_HDMI_Audio_DB            = 18, /* HDMI Audio Data Block */
+	EXT_TAG_ROOM_Config_DB           = 19, /* Room Configuration Data Block */
+	EXT_TAG_Speaker_Location_DB      = 20, /* Speaker Location Data Block */
+	/* reserved: 21...31 */
+	EXT_TAG_Infoframe_DB             = 32, /* Infoframe Data Block */
+	/* reserved: 33 */
+	EXT_TAG_DisplayID_TypeVII_VTDB   = 34, /* DisplayID Type-VII Video Timing Data Block */
+	EXT_TAG_DisplayID_TypeVIII_VTDB  = 35, /* DisplayID Type-VIII Video Timing Data Block */
+	/* reserved: 36...41 */
+	EXT_TAG_DisplayID_TypeX_VTDB     = 42, /* DisplayID Type-X Video Timing Data Block */
+	/* reserved: 43...119 */
+	EXT_TAG_HF_EEODB                 = 120, /* HDMI Forum EDID Extension Override Data Block */
+	EXT_TAG_HF_SCDB                  = 121, /* HDMI Forum Sink Capability Data Block */
+	/* reserved: 122...127 for HDMI */
+	/* reserved: 128...255 */
+};
+
 const unsigned DTD_SIZE = 0x12;
 
-int _dw_edid_update_sink_hdmi20(bool state)
+static struct sink_info_s *dw_get_sink(void)
 {
 	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
-	sink_edid_t *sink = hdmi->sink_info;
 
-	if (!sink) {
-		hdmi_err("check point sink is null\n");
+	if (IS_ERR_OR_NULL(hdmi)) {
+		shdmi_err(hdmi);
+		return NULL;
+	}
+
+	return hdmi->sink_info;
+}
+
+static int _dw_edid_update_sink_hdmi20(bool state)
+{
+	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
 		return -1;
 	}
 
 	sink->edid_m20Sink = state;
 	hdmi->video_dev.mHdmi20 = state;
 	return 0;
-}
-
-int _edid_calculate_checksum(u8 *edid)
-{
-	int i, checksum = 0;
-
-	for (i = 0; i < EDID_BLOCK_SIZE; i++)
-		checksum += edid[i];
-
-	return checksum % 256; /* CEA-861 Spec */
 }
 
 void _reset_data_block_monitor_range_limits(dw_edid_monitor_descriptior_data_t *mrl)
@@ -245,7 +292,6 @@ int _parse_data_block_hdmi(dw_edid_hdmi_vs_data_t *vsdb, u8 *data)
 	unsigned i = 0;
 	unsigned j = 0;
 
-	log_trace();
 	_reset_data_block_hdmi(vsdb);
 	if (data == 0)
 		return false;
@@ -380,6 +426,7 @@ int _parse_data_block_hdmi(dw_edid_hdmi_vs_data_t *vsdb, u8 *data)
 		}
 	}
 	vsdb->mValid = true;
+
 	return true;
 }
 
@@ -387,7 +434,6 @@ int _parse_data_block_hdmi_forum(dw_edid_hdmi_forum_vs_data_t *forumvsdb, u8 *da
 {
 	u16 blockLength;
 
-	log_trace();
 	_reset_data_block_hdmi_forum(forumvsdb);
 	if (data == 0)
 		return false;
@@ -414,31 +460,16 @@ int _parse_data_block_hdmi_forum(dw_edid_hdmi_forum_vs_data_t *forumvsdb, u8 *da
 	forumvsdb->mIndependentView = dw_bit_field(data[6], 2, 1);
 	forumvsdb->mDualView = dw_bit_field(data[6], 1, 1);
 	forumvsdb->m3D_OSD_Disparity = dw_bit_field(data[6], 0, 1);
-	forumvsdb->mDC_30bit_420 = dw_bit_field(data[7], 2, 1);
+	forumvsdb->mDC_30bit_420 = dw_bit_field(data[7], 0, 1);
 	forumvsdb->mDC_36bit_420 = dw_bit_field(data[7], 1, 1);
-	forumvsdb->mDC_48bit_420 = dw_bit_field(data[7], 0, 1);
+	forumvsdb->mDC_48bit_420 = dw_bit_field(data[7], 2, 1);
 	forumvsdb->mValid = true;
-
-	edid_log("version %d\n", dw_bit_field(data[4], 0, 7));
-	edid_log("Max_TMDS_Charater_rate %d\n",
-		    dw_bit_field(data[5], 0, 7));
-	edid_log("SCDC_Present %d\n", dw_bit_field(data[6], 7, 1));
-	edid_log("RR_Capable %d\n", dw_bit_field(data[6], 6, 1));
-	edid_log("LTE_340Mcsc_scramble %d\n",
-		    dw_bit_field(data[6], 3, 1));
-	edid_log("Independent_View %d\n", dw_bit_field(data[6], 2, 1));
-	edid_log("Dual_View %d\n", dw_bit_field(data[6], 1, 1));
-	edid_log("3D_OSD_Disparity %d\n", dw_bit_field(data[6], 0, 1));
-	edid_log("DC_48bit_420 %d\n", dw_bit_field(data[7], 2, 1));
-	edid_log("DC_36bit_420 %d\n", dw_bit_field(data[7], 1, 1));
-	edid_log("DC_30bit_420 %d\n", dw_bit_field(data[7], 0, 1));
 
 	return true;
 }
 
 int _parse_data_block_speaker_allocation(dw_edid_speaker_allocation_data_t *sadb, u8 *data)
 {
-	log_trace();
 	_reset_data_block_speaker_alloction(sadb);
 	if ((data != 0) && (dw_bit_field(data[0], 0, 5) == 0x03) &&
 				(dw_bit_field(data[0], 5, 3) == 0x04)) {
@@ -451,7 +482,6 @@ int _parse_data_block_speaker_allocation(dw_edid_speaker_allocation_data_t *sadb
 
 int _parse_data_block_video_capability(dw_edid_video_capabilit_data_t *vcdb, u8 *data)
 {
-	log_trace();
 	_reset_data_block_video_capabilit(vcdb);
 	/* check tag code and extended tag */
 	if ((data != 0) && (dw_bit_field(data[0], 5, 3) == 0x7) &&
@@ -471,7 +501,6 @@ int _parse_data_block_video_capability(dw_edid_video_capabilit_data_t *vcdb, u8 
 
 int _parse_data_block_colorimetry(dw_edid_colorimetry_data_t *cdb, u8 *data)
 {
-	log_trace();
 	_reset_data_block_colorimetry(cdb);
 	if ((data != 0) && (dw_bit_field(data[0], 0, 5) == 0x03) &&
 		(dw_bit_field(data[0], 5, 3) == 0x07)
@@ -486,7 +515,6 @@ int _parse_data_block_colorimetry(dw_edid_colorimetry_data_t *cdb, u8 *data)
 
 int _parse_data_block_hdr_static_metadata(dw_edid_hdr_static_metadata_data_t *hdr_metadata, u8 *data)
 {
-	log_trace();
 	_reset_data_block_hdr_metadata(hdr_metadata);
 	if ((data != 0) && (dw_bit_field(data[0], 0, 5) > 1)
 		&& (dw_bit_field(data[0], 5, 3) == 0x07)
@@ -506,13 +534,13 @@ int _parse_data_block_hdr_static_metadata(dw_edid_hdr_static_metadata_data_t *hd
 	return false;
 }
 
-static void _parse_data_block_ycc420_video(sink_edid_t *edidExt,
+static void _parse_data_block_ycc420_video(struct sink_info_s *sink,
 		u8 Ycc420All, u8 LimitedToYcc420All)
 {
 	u32 edid_cnt = 0;
 
-	for (edid_cnt = 0; edid_cnt < edidExt->edid_mSvdIndex; edid_cnt++) {
-		switch (edidExt->edid_mSvd[edid_cnt].mCode) {
+	for (edid_cnt = 0; edid_cnt < sink->edid_mSvdIndex; edid_cnt++) {
+		switch (sink->edid_mSvd[edid_cnt].mCode) {
 		case 96:
 		case 97:
 		case 101:
@@ -520,26 +548,23 @@ static void _parse_data_block_ycc420_video(sink_edid_t *edidExt,
 		case 106:
 		case 107:
 			Ycc420All == 1 ?
-				edidExt->edid_mSvd[edid_cnt].mYcc420 = Ycc420All : 0;
+				sink->edid_mSvd[edid_cnt].mYcc420 = Ycc420All : 0;
 			LimitedToYcc420All == 1 ?
-				edidExt->edid_mSvd[edid_cnt].mLimitedToYcc420 =
+				sink->edid_mSvd[edid_cnt].mLimitedToYcc420 =
 							LimitedToYcc420All : 0;
 			break;
 		}
 	}
 }
 
-static int _parse_cta_data_block(u8 *data, sink_edid_t *edidExt)
+static int _parse_cta_data_block(u8 *data, struct sink_info_s *sink)
 {
-	u8 c = 0;
 	dw_edid_block_sad_t tmpSad;
 	dw_edid_block_svd_t tmpSvd;
 	u8 tmpYcc420All = 0;
 	u8 tmpLimitedYcc420All = 0;
 	u32 ieeeId = 0;
-	u8 extendedTag = 0;
-	int i = 0;
-	int edid_cnt = 0;
+	int i = 0, ret = 0;
 	int svdNr = 0;
 	int icnt = 0;
 	u8 tag = dw_bit_field(data[0], 5, 3);
@@ -549,179 +574,196 @@ static int _parse_cta_data_block(u8 *data, sink_edid_t *edidExt)
 	tmpSvd.mYcc420 = 0;
 
 	switch (tag) {
-	case 0x1:		/* Audio Data Block */
-		edid_log("edid parse audio data block\n");
-		for (c = 1; c < (length + 1); c += 3) {
-			_parse_data_block_short_audio(&tmpSad, data + c);
-			if (edidExt->edid_mSadIndex < (sizeof(edidExt->edid_mSad) / sizeof(dw_edid_block_sad_t)))
-				edidExt->edid_mSad[edidExt->edid_mSadIndex++] = tmpSad;
+	case TAG_ADB:
+		hdmi_trace("edid parse: audio data block\n");
+		for (i = 1; i < (length + 1); i += 3) {
+			_parse_data_block_short_audio(&tmpSad, data + i);
+			if (sink->edid_mSadIndex < ARRAY_SIZE(sink->edid_mSad))
+				sink->edid_mSad[sink->edid_mSadIndex++] = tmpSad;
 			else
-				edid_log("buffer full - sad ignored\n");
+				hdmi_wrn("edid sad %d not save when buffer full\n", i);
 		}
 		break;
-	case 0x2:		/* Video Data Block */
-		edid_log("edid parse video data block\n");
-		for (c = 1; c < (length + 1); c++) {
-			_parse_data_block_short_video(&tmpSvd, data[c]);
-			if (edidExt->edid_mSvdIndex < (sizeof(edidExt->edid_mSvd) / sizeof(dw_edid_block_svd_t)))
-				edidExt->edid_mSvd[edidExt->edid_mSvdIndex++] = tmpSvd;
+	case TAG_VDB:
+		hdmi_trace("edid parse: video data block\n");
+		for (i = 1; i < (length + 1); i++) {
+			_parse_data_block_short_video(&tmpSvd, data[i]);
+			if (sink->edid_mSvdIndex < ARRAY_SIZE(sink->edid_mSvd))
+				sink->edid_mSvd[sink->edid_mSvdIndex++] = tmpSvd;
 			else
-				edid_log("buffer full - SVD ignored\n");
+				hdmi_wrn("edid svd %d not save when buffer full\n", i);
 		}
 		break;
-	case 0x3:		/* Vendor Specific Data Block HDMI or HF */
+	case TAG_VSDB:
 		ieeeId = dw_byte_to_dword(0x00, data[3], data[2], data[1]);
-		if (ieeeId == 0x000C03) {	/* HDMI */
-			edid_log("edid parse hdmi vendor specific data block");
-			if (_parse_data_block_hdmi(&edidExt->edid_mHdmivsdb, data) != true) {
-				hdmi_err("hdmi vendor specific data dlock parse failed!!!\n");
+		if (ieeeId == HDMI_IEEE_CODE) {
+			hdmi_trace("edid parse: hdmi vendor specific data block");
+			ret = _parse_data_block_hdmi(&sink->edid_mHdmivsdb, data);
+			if (ret != true) {
+				hdmi_err("hdmi vendor specific data dlock parse failed!\n");
 				break;
 			}
-			edid_log("hdmi vsdb parsed success.\n");
-		} else {
-			if (ieeeId == 0xC45DD8) {	/* HDMI-F */
-				edid_log("edid parse hdmi forum vendor specific data block");
-				_dw_edid_update_sink_hdmi20(true);
-				if (_parse_data_block_hdmi_forum(&edidExt->edid_mHdmiForumvsdb, data) != true) {
-					hdmi_err("hdmi forum vendor specific data block parse failed!!!\n");
-					break;
-				}
-			} else {
-				edid_log("vendor specific data block not parsed ieeeId: 0x%x\n",
-					ieeeId);
+		} else if (ieeeId == HDMI_FORUM_IEEE_CODE) {
+			hdmi_trace("edid parse: hdmi forum vendor specific data block");
+			_dw_edid_update_sink_hdmi20(true);
+			ret = _parse_data_block_hdmi_forum(&sink->edid_mHdmiForumvsdb, data);
+			if (ret != true) {
+				hdmi_err("hdmi forum vendor specific data block parse failed!\n");
+				break;
 			}
+		} else {
+			hdmi_trace("unsupport parse vendor specific data block ieeeId: 0x%x\n",
+					ieeeId);
 		}
 		break;
-	case 0x4:		/* Speaker Allocation Data Block */
-		edid_log("edid parse speaker allocation data block\n");
-		if (_parse_data_block_speaker_allocation(&edidExt->edid_mSpeakerAllocationDataBlock, data) != true)
+	case TAG_SADB:
+		hdmi_trace("edid parse: speaker allocation data block\n");
+		ret = _parse_data_block_speaker_allocation(&sink->edid_mSpeakerAllocationDataBlock, data);
+		if (ret != true)
 			hdmi_err("Speaker Allocation Data Block corrupt\n");
 		break;
-	case 0x7:{
-		extendedTag = data[1];
-		switch (extendedTag) {
-		case 0x00:	/* Video Capability Data Block */
-			edid_log("edid parse video capability Data Block\n");
-			if (_parse_data_block_video_capability(&edidExt->edid_mVideoCapabilityDataBlock, data) != true)
+	case TAG_Extend:{
+		switch (data[1]) {
+		case EXT_TAG_Video_Cap_DB:
+			hdmi_trace("edid parse: extend video capability data block\n");
+			ret = _parse_data_block_video_capability(&sink->edid_mVideoCapabilityDataBlock, data);
+			if (ret != true)
 				hdmi_err("Video Capability Data Block corrupt\n");
 			break;
-		case 0x04:	/* HDMI Video Data Block */
-			edid_log("edid unsupport parse hdmi video data block\n");
+		case EXT_TAG_HDMI_VDB:
+			hdmi_trace("edid unsupport parse hdmi video data block\n");
 			break;
-		case 0x05:	/* Colorimetry Data Block */
-			edid_log("edid parse colorimetry Data Block\n");
-			if (_parse_data_block_colorimetry(&edidExt->edid_mColorimetryDataBlock, data) != true)
+		case EXT_TAG_Colorimetry_DB:
+			hdmi_trace("edid parse: colorimetry data block\n");
+			ret = _parse_data_block_colorimetry(&sink->edid_mColorimetryDataBlock, data);
+			if (ret != true)
 				hdmi_err("Colorimetry Data Block corrupt\n");
 			break;
-		case 0x06:	/* HDR Static Metadata Data Block */
-			edid_log("edid parse hdr static metadata data block\n");
-			if (_parse_data_block_hdr_static_metadata(&edidExt->edid_hdr_static_metadata_data_block, data) != true)
+		case EXT_TAG_HDR_SMDB:
+			hdmi_trace("edid parse hdr static metadata data block\n");
+			ret = _parse_data_block_hdr_static_metadata(&sink->edid_hdr_static_metadata_data_block, data);
+			if (ret != true)
 				hdmi_err("HDR Static Metadata Data Block corrupt\n");
 			break;
-		case 0x12:	/* HDMI Audio Data Block */
-			edid_log("edid unsupport parse hdmi audio data block\n");
+		case EXT_TAG_HDMI_Audio_DB:
+			hdmi_trace("edid unsupport parse hdmi audio data block\n");
 			break;
-		case 0xe:
-			/* * If it is a YCC420 VDB then VICs can ONLY be displayed in YCC 4:2:0 */
-			edid_log("edid parse ycc420 video data block\n");
-			/* * If Sink has YCC Datablocks it is HDMI 2.0 */
+		case EXT_TAG_YCbCr420_Video_DB:
+			hdmi_trace("edid parse: ycc420 video data block\n");
 			_dw_edid_update_sink_hdmi20(true);
 			tmpLimitedYcc420All = (dw_bit_field(data[0], 0, 5) == 1 ? 1 : 0);
-			_parse_data_block_ycc420_video(edidExt, tmpYcc420All, tmpLimitedYcc420All);
+			_parse_data_block_ycc420_video(sink, tmpYcc420All, tmpLimitedYcc420All);
 			for (i = 0; i < (dw_bit_field(data[0], 0, 5) - 1); i++) {
 				/* * Length includes the tag byte */
 				tmpSvd.mCode = data[2 + i];
 				tmpSvd.mNative = 0;
 				tmpSvd.mLimitedToYcc420 = 1;
-				for (edid_cnt = 0; edid_cnt < edidExt->edid_mSvdIndex; edid_cnt++) {
-					if (edidExt->edid_mSvd[edid_cnt].mCode == tmpSvd.mCode) {
-						edidExt->edid_mSvd[edid_cnt] =	tmpSvd;
+				for (icnt = 0; icnt < sink->edid_mSvdIndex; icnt++) {
+					if (sink->edid_mSvd[icnt].mCode == tmpSvd.mCode) {
+						sink->edid_mSvd[icnt] =	tmpSvd;
 						goto concluded;
 					}
 				}
-				if (edidExt->edid_mSvdIndex <
-					(sizeof(edidExt->edid_mSvd) /  sizeof(dw_edid_block_svd_t))) {
-					edidExt->edid_mSvd[edidExt->edid_mSvdIndex] = tmpSvd;
-					edidExt->edid_mSvdIndex++;
+				if (sink->edid_mSvdIndex < ARRAY_SIZE(sink->edid_mSvd)) {
+					sink->edid_mSvd[sink->edid_mSvdIndex] = tmpSvd;
+					sink->edid_mSvdIndex++;
 				} else {
-					edid_log("buffer full - YCC 420 DTD ignored\n");
+					hdmi_trace("buffer full - YCC 420 DTD ignored\n");
 				}
 concluded:;
 			}
 			break;
-		case 0x0f:
-			/* * If it is a YCC420 CDB then VIC can ALSO be displayed in YCC 4:2:0 */
+		case EXT_TAG_YCbCr420_Cap_Map_DB:
 			_dw_edid_update_sink_hdmi20(true);
-			edid_log("edid parse ycc420 capability map data block\n");
-			/* If YCC420 CMDB is bigger than 1, then there is SVD info to parse */
+			hdmi_trace("edid parse: ycc420 capability map data block\n");
 			if (dw_bit_field(data[0], 0, 5) > 1) {
-				for (icnt = 0; icnt < 8; icnt++) {
-					/* * Lenght includes the tag byte */
-					if ((dw_bit_field(data[2], 1 >> icnt, 1) & 0x01)) {
-						svdNr = icnt;
-						tmpSvd.mCode = edidExt->edid_mSvd[svdNr].mCode;
-						tmpSvd.mYcc420 = 1;
-						edidExt->edid_mSvd[svdNr] = tmpSvd;
+				for (i = 0; i < dw_bit_field(data[0], 0, 5) - 1; i++) {
+					for (icnt = 0; icnt < 8; icnt++) {
+						/* * Lenght includes the tag byte */
+						if ((dw_bit_field(data[i + 2], icnt, 1) & 0x01)) {
+							svdNr = icnt + (i * 8);
+							tmpSvd.mCode = sink->edid_mSvd[svdNr].mCode;
+							tmpSvd.mYcc420 = 1;
+							sink->edid_mSvd[svdNr] = tmpSvd;
+							hdmi_trace("svd[%d] update ycc420 = 1\n", svdNr);
+						}
 					}
 				}
-				/* Otherwise, all SVDs present at the Video Data Block support YCC420 */
 			} else {
 				tmpYcc420All = (dw_bit_field(data[0], 0, 5) == 1 ? 1 : 0);
-				_parse_data_block_ycc420_video(edidExt, tmpYcc420All, tmpLimitedYcc420All);
+				_parse_data_block_ycc420_video(sink, tmpYcc420All, tmpLimitedYcc420All);
+				sink->edid_mYcc420Support = true;
 			}
 			break;
+		case EXT_TAG_HF_SCDB:
+			hdmi_trace("edid parse: hdmi forum sink capability data block\n");
+			_dw_edid_update_sink_hdmi20(true);
+			/* TODO: update to hf-vsdb */
+			sink->edid_mHdmiForumvsdb.mMaxTmdsCharRate = dw_bit_field(data[5], 0, 7);
+			sink->edid_mHdmiForumvsdb.mSCDC_Present    = dw_bit_field(data[6], 7, 1);
+			break;
 		default:
-			edid_log("Extended Data Block not parsed %d\n",
-					extendedTag);
+			hdmi_trace("Extended Data Block not parsed %d\n", data[1]);
 			break;
 		}
 		break;
 	}
 	default:
-		edid_log("Data Block not parsed %d\n", tag);
+		hdmi_trace("Data Block not parsed %d\n", tag);
 		break;
 	}
 	return length + 1;
 }
 
-static int _edid_parser_block_base(struct edid *edid, sink_edid_t *sink)
+static int _edid_parser_block_base(struct edid *edid, struct sink_info_s *sink)
 {
 	int i;
-	char *monitorName;
+	dw_dtd_t tmpDtd;
+	struct detailed_timing    *desc = NULL;
+	struct detailed_non_pixel *data = NULL;
 
 	if (edid->header[0] != 0) {
 		hdmi_err("edid base block is unvalid!!!\n");
 		return -1;
 	}
 
-	edid_log("parse block0 detailed discriptor:\n");
+	/* base info */
+	sink->mfg_week = edid->mfg_week;
+	sink->mfg_year = edid->mfg_year;
+
+	hdmi_trace("parse block0 detailed discriptor:\n");
 	for (i = 0; i < 4; i++) {
-		struct detailed_timing *detailed_timing = &(edid->detailed_timings[i]);
-
-		if (detailed_timing->pixel_clock == 0) {
-			struct detailed_non_pixel *npixel = &(detailed_timing->data.other_data);
-
-			switch (npixel->type) {
+		desc = &edid->detailed_timings[i];
+		if (desc->pixel_clock == 0) {
+			data = &desc->data.other_data;
+			switch (data->type) {
 			case EDID_DETAIL_MONITOR_NAME:
-				monitorName = (char *) &(npixel->data.str.str);
-				edid_log("Monitor name: %s\n", monitorName);
+				memset(sink->prod_name,
+						0x0, sizeof(sink->prod_name));
+				memcpy(sink->prod_name,
+						data->data.str.str, ARRAY_SIZE(data->data.str.str));
 				break;
-			case EDID_DETAIL_MONITOR_RANGE:
+			default:
+				hdmi_inf("dw edid unsupport parser desc type: %d\n", data->type);
 				break;
-
 			}
-		} else { /* Detailed Timing Definition */
-			struct detailed_pixel_timing *ptiming = &(detailed_timing->data.pixel_data);
-			edid_log(" - pixel_clock:%d\n", detailed_timing->pixel_clock * 10000);
-			edid_log(" - hactive * vactive: %d * %d\n\n",
-			(((ptiming->hactive_hblank_hi >> 4) & 0x0f) << 8) | ptiming->hactive_lo,
-			(((ptiming->vactive_vblank_hi >> 4) & 0x0f) << 8) | ptiming->vactive_lo);
+			continue;
 		}
+
+		if (_parse_data_block_detailed_timing(&tmpDtd, (u8 *)desc) != true) {
+			hdmi_inf("dw edid base block desc timing %d parser failed\n", i);
+			continue;
+		}
+		hdmi_trace("[dtd timing %d]\n", sink->edid_mDtdIndex);
+		hdmi_trace(" - pixel clock: %dKHz, %dx%d%s\n", tmpDtd.mPixelClock,
+			tmpDtd.mHActive, tmpDtd.mVActive, tmpDtd.mInterlaced ? "i" : "p");
+		sink->edid_mDtd[sink->edid_mDtdIndex] = tmpDtd;
+		sink->edid_mDtdIndex++;
 	}
 	return 0;
 }
 
-static int _edid_parser_block_cta_861(u8 *buffer, sink_edid_t *edidExt)
+static int _edid_parser_block_cta_861(u8 *buffer, struct sink_info_s *sink)
 {
 	int i = 0;
 	int c = 0;
@@ -734,71 +776,73 @@ static int _edid_parser_block_cta_861(u8 *buffer, sink_edid_t *edidExt)
 	}
 
 	/* CTA 861 header block parse */
-	edidExt->edid_mYcc422Support     = dw_bit_field(buffer[3],	4, 1) == 1;
-	edidExt->edid_mYcc444Support     = dw_bit_field(buffer[3],	5, 1) == 1;
-	edidExt->edid_mBasicAudioSupport = dw_bit_field(buffer[3], 6, 1) == 1;
-	edidExt->edid_mUnderscanSupport  = dw_bit_field(buffer[3], 7, 1) == 1;
+	sink->edid_mYcc422Support     = dw_bit_field(buffer[3],	4, 1) == 1;
+	sink->edid_mYcc444Support     = dw_bit_field(buffer[3],	5, 1) == 1;
+	sink->edid_mBasicAudioSupport = dw_bit_field(buffer[3], 6, 1) == 1;
+	sink->edid_mUnderscanSupport  = dw_bit_field(buffer[3], 7, 1) == 1;
 
 	/* CTA 861 data block parse */
 	if (offset != 4) {
-		for (i = 4; i < offset; i += _parse_cta_data_block(buffer + i, edidExt))
+		for (i = 4; i < offset; i += _parse_cta_data_block(buffer + i, sink))
 			;
 	}
 
-	memcpy(edidExt->detailed_timings, buffer + 84, sizeof(edidExt->detailed_timings));
+	memcpy(sink->detailed_timings, buffer + 84, sizeof(sink->detailed_timings));
 
 	/* last is checksum */
 	for (i = offset, c = 0; ((i + DTD_SIZE) < (EDID_BLOCK_SIZE - 1)) && c < 6; i += DTD_SIZE, c++) {
 		if (_parse_data_block_detailed_timing(&tmpDtd, buffer + i) == true) {
-			if (edidExt->edid_mDtdIndex < ((sizeof(edidExt->edid_mDtd) / sizeof(dw_dtd_t)))) {
-				edidExt->edid_mDtd[edidExt->edid_mDtdIndex] = tmpDtd;
-				edid_log("edid_mDtd code %d\n", edidExt->edid_mDtd[edidExt->edid_mDtdIndex].mCode);
-				edid_log("edid_mDtd limited to Ycc420? %d\n", edidExt->edid_mDtd[edidExt->edid_mDtdIndex].mLimitedToYcc420);
-				edid_log("edid_mDtd supports Ycc420? %d\n", edidExt->edid_mDtd[edidExt->edid_mDtdIndex].mYcc420);
-				edidExt->edid_mDtdIndex++;
-			} else {
-				edid_log("buffer full - DTD ignored\n");
+			if (sink->edid_mDtdIndex < ((sizeof(sink->edid_mDtd) / sizeof(dw_dtd_t)))) {
+				sink->edid_mDtd[sink->edid_mDtdIndex] = tmpDtd;
+				sink->edid_mDtdIndex++;
+				continue;
 			}
+			hdmi_inf("dw edid parse not save dtd %d\n", c);
 		}
 	}
 	return 0;
 }
 
-void dw_edid_sink_reset(sink_edid_t *edidExt)
+void dw_edid_sink_reset(void)
 {
-	unsigned i = 0;
+	struct sink_info_s *sink = dw_get_sink();
+	u8 i = 0;
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return;
+	}
 
 	_dw_edid_update_sink_hdmi20(false);
 
-	for (i = 0; i < sizeof(edidExt->edid_mMonitorName); i++)
-		edidExt->edid_mMonitorName[i] = 0;
+	for (i = 0; i < sizeof(sink->prod_name); i++)
+		sink->prod_name[i] = 0;
 
-	edidExt->edid_mBasicAudioSupport = false;
-	edidExt->edid_mUnderscanSupport  = false;
-	edidExt->edid_mYcc422Support = false;
-	edidExt->edid_mYcc444Support = false;
-	edidExt->edid_mYcc420Support = false;
-	edidExt->edid_mDtdIndex = 0;
-	edidExt->edid_mSadIndex = 0;
-	edidExt->edid_mSvdIndex = 0;
+	sink->edid_mBasicAudioSupport = false;
+	sink->edid_mUnderscanSupport  = false;
+	sink->edid_mYcc422Support = false;
+	sink->edid_mYcc444Support = false;
+	sink->edid_mYcc420Support = false;
+	sink->edid_mDtdIndex = 0;
+	sink->edid_mSadIndex = 0;
+	sink->edid_mSvdIndex = 0;
 
-	_reset_data_block_hdmi(&edidExt->edid_mHdmivsdb);
-	_reset_data_block_hdmi_forum(&edidExt->edid_mHdmiForumvsdb);
-	_reset_data_block_monitor_range_limits(&edidExt->edid_mMonitorRangeLimits);
-	_reset_data_block_video_capabilit(&edidExt->edid_mVideoCapabilityDataBlock);
-	_reset_data_block_colorimetry(&edidExt->edid_mColorimetryDataBlock);
-	_reset_data_block_hdr_metadata(&edidExt->edid_hdr_static_metadata_data_block);
-	_reset_data_block_speaker_alloction(&edidExt->edid_mSpeakerAllocationDataBlock);
+	_reset_data_block_hdmi(&sink->edid_mHdmivsdb);
+	_reset_data_block_hdmi_forum(&sink->edid_mHdmiForumvsdb);
+	_reset_data_block_monitor_range_limits(&sink->edid_mMonitorRangeLimits);
+	_reset_data_block_video_capabilit(&sink->edid_mVideoCapabilityDataBlock);
+	_reset_data_block_colorimetry(&sink->edid_mColorimetryDataBlock);
+	_reset_data_block_hdr_metadata(&sink->edid_hdr_static_metadata_data_block);
+	_reset_data_block_speaker_alloction(&sink->edid_mSpeakerAllocationDataBlock);
 }
 
 int dw_edid_parse_info(u8 *data)
 {
-	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
-	sink_edid_t *sink = hdmi->sink_info;
+	struct sink_info_s *sink = dw_get_sink();
 	int ret = -1;
 
-	if (!sink) {
-		hdmi_err("check point sink is null\n");
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
 		goto parse_exit;
 	}
 
@@ -821,23 +865,35 @@ parse_exit:
 	return ret;
 }
 
+int dw_sink_is_hdmi20(void)
+{
+	struct sink_info_s *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return 0;
+	}
+
+	return sink->edid_m20Sink;
+}
+
 bool dw_edid_check_hdmi_vic(u32 code)
 {
-	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
+	struct sink_info_s *sink = dw_get_sink();
 	u32 i;
 
-	if (!code) {
-		hdmi_wrn("hdmi code %d is invalid\n", code);
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
 		return false;
 	}
 
-	if (!hdmi->sink_info) {
-		hdmi_err("dw edid check point sink_info is null\n");
+	if (code == 0) {
+		hdmi_wrn("dw edid check cea code %d is invalid\n", code);
 		return false;
 	}
 
-	for (i = 0; (i < 4) && (hdmi->sink_info->edid_mHdmivsdb.mHdmiVic[i] != 0); i++) {
-		if (hdmi->sink_info->edid_mHdmivsdb.mHdmiVic[i] == code)
+	for (i = 0; (i < 4) && (sink->edid_mHdmivsdb.mHdmiVic[i] != 0); i++) {
+		if (sink->edid_mHdmivsdb.mHdmiVic[i] == code)
 			return true;
 	}
 
@@ -846,21 +902,21 @@ bool dw_edid_check_hdmi_vic(u32 code)
 
 bool dw_edid_check_cea_vic(u32 code)
 {
-	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
+	struct sink_info_s *sink = dw_get_sink();
 	u32 i;
 
-	if (!code) {
-		hdmi_wrn("cea code %d is invalid\n", code);
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
 		return false;
 	}
 
-	if (!hdmi->sink_info) {
-		hdmi_err("dw edid check point sink_info is null\n");
+	if (code == 0) {
+		hdmi_wrn("dw edid check cea code %d is invalid\n", code);
 		return false;
 	}
 
-	for (i = 0; (i < 128) && (hdmi->sink_info->edid_mSvd[i].mCode != 0); i++) {
-		if (hdmi->sink_info->edid_mSvd[i].mCode == code)
+	for (i = 0; (i < 128) && (sink->edid_mSvd[i].mCode != 0); i++) {
+		if (sink->edid_mSvd[i].mCode == code)
 			return true;
 	}
 
@@ -869,19 +925,243 @@ bool dw_edid_check_cea_vic(u32 code)
 
 bool dw_edid_check_scdc_support(void)
 {
-	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
-	sink_edid_t *sink = hdmi->sink_info;
+	struct sink_info_s   *sink = dw_get_sink();
 
 	return sink->edid_mHdmiForumvsdb.mSCDC_Present;
 }
 
+int dw_edid_check_only_yuv420(u32 vic)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+	int i = 0;
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (vic == 0x0)
+		return 0x0;
+
+	for (i = 0; i < sink->edid_mSvdIndex; i++) {
+		if (sink->edid_mSvd[i].mCode == vic) {
+			if (sink->edid_mSvd[i].mLimitedToYcc420) {
+				return 0x1;
+			}
+		}
+	}
+
+	return 0x0;
+}
+
+int dw_edid_check_yuv420_base(u32 vic)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+	int i = 0;
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (vic == 0)
+		return 0x0;
+
+	for (i = 0; i < sink->edid_mSvdIndex; i++) {
+		if (sink->edid_mSvd[i].mCode == vic) {
+			if (sink->edid_mSvd[i].mLimitedToYcc420 || sink->edid_mSvd[i].mYcc420) {
+				hdmi_trace("this vic %d is support 420. limit - %d, all - %d\n",
+					vic, sink->edid_mSvd[i].mLimitedToYcc420, sink->edid_mSvd[i].mYcc420);
+				return 0x1;
+			}
+		}
+	}
+
+	return 0x0;
+}
+
+int dw_edid_check_yuv422_base(void)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (sink->edid_mYcc422Support)
+		return 0x1;
+
+	return 0x0;
+}
+
+int dw_edid_check_yuv444_base(void)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (sink->edid_mYcc444Support)
+		return 0x1;
+
+	return 0x0;
+}
+
+int dw_edid_check_rgb_dc(u8 bits)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	switch (bits) {
+	case 1: /* 10-bits */
+		return sink->edid_mHdmivsdb.mDeepColor30;
+	case 2: /* 12-bits */
+		return sink->edid_mHdmivsdb.mDeepColor36;
+	case 3: /* 16-bits */
+		return sink->edid_mHdmivsdb.mDeepColor48;
+	default:
+		return 0x0;
+	}
+
+	return 0x0;
+}
+
+int dw_edid_check_yuv444_dc(u8 bits)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (sink->edid_mHdmivsdb.mDeepColorY444 == 0)
+		return 0x0;
+
+	switch (bits) {
+	case 1: /* 10-bits */
+		return sink->edid_mHdmivsdb.mDeepColor30;
+	case 2: /* 12-bits */
+		return sink->edid_mHdmivsdb.mDeepColor36;
+	case 3: /* 16-bits */
+		return sink->edid_mHdmivsdb.mDeepColor48;
+	default:
+		return 0x0;
+	}
+
+	return 0x0;
+}
+
+int dw_edid_check_yuv422_dc(u8 bits)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	switch (bits) {
+	case 1: /* 10-bits */
+		return sink->edid_mHdmivsdb.mDeepColor30;
+	case 2: /* 12-bits */
+		return sink->edid_mHdmivsdb.mDeepColor36;
+	case 3: /* 16-bits */
+		return sink->edid_mHdmivsdb.mDeepColor48;
+	default:
+		return 0x0;
+	}
+
+	return 0x0;
+}
+
+int dw_edid_check_yuv420_dc(u8 bits)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	switch (bits) {
+	case 1: /* 10-bits */
+		return sink->edid_mHdmiForumvsdb.mDC_30bit_420;
+	case 2: /* 12-bits */
+		return sink->edid_mHdmiForumvsdb.mDC_36bit_420;
+	case 3: /* 16-bits */
+		return sink->edid_mHdmiForumvsdb.mDC_48bit_420;
+	default:
+		return 0;
+	}
+
+	return 0;
+}
+
+int dw_edid_check_hdr10(void)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (sink->edid_hdr_static_metadata_data_block.et_n & BIT(2))
+		return 0x1;
+
+	return 0x0;
+}
+
+int dw_edid_check_hlg(void)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+
+	if (sink->edid_hdr_static_metadata_data_block.et_n & BIT(3))
+		return 0x1;
+
+	return 0x0;
+}
+
+int dw_edid_check_max_tmds_clk(u32 clk)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+	u32 max_rate = 300;
+
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
+		return -1;
+	}
+
+	if (dw_sink_is_hdmi20()) {
+		if (sink->edid_mHdmiForumvsdb.mMaxTmdsCharRate)
+			max_rate = sink->edid_mHdmiForumvsdb.mMaxTmdsCharRate * 5;
+		else
+			max_rate = 600;
+	}
+
+	if (max_rate > (clk / 1000))
+		return 0x1;
+
+	hdmi_trace("dw edid check max rate: %d, use rate: %d, check rate: %d\n",
+		sink->edid_mHdmiForumvsdb.mMaxTmdsCharRate, max_rate, clk / 1000);
+	return 0x0;
+}
+
 int dw_edid_exit(void)
 {
-	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
+	struct sink_info_s   *sink = dw_get_sink();
 
-	if (hdmi->sink_info) {
-		kfree(hdmi->sink_info);
-		hdmi->sink_info = NULL;
+	if (sink) {
+		kfree(sink);
+		sink = NULL;
 	}
 
 	return 0;
@@ -889,19 +1169,46 @@ int dw_edid_exit(void)
 
 int dw_edid_init(void)
 {
+	struct sink_info_s   *sink = NULL;
 	struct dw_hdmi_dev_s *hdmi = dw_get_hdmi();
 
-	if (hdmi->sink_info) {
-		kfree(hdmi->sink_info);
-		hdmi->sink_info = NULL;
-	}
-
-	hdmi->sink_info = kzalloc(sizeof(sink_edid_t), GFP_KERNEL);
-	if (!hdmi->sink_info) {
-		hdmi_err("dw edid init memory failed!\n");
+	sink = kzalloc(sizeof(struct sink_info_s), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(sink)) {
+		shdmi_err(sink);
 		return -1;
 	}
-	memset(hdmi->sink_info, 0, sizeof(sink_edid_t));
+	hdmi->sink_info = sink;
 
+	memset(sink, 0, sizeof(struct sink_info_s));
 	return 0;
+}
+
+ssize_t dw_edid_dump(char *buf)
+{
+	struct sink_info_s   *sink = dw_get_sink();
+	ssize_t n = 0;
+	int i = 0;
+
+	n += sprintf(buf + n, "[sink]\n");
+	n += sprintf(buf + n, " - date    : %d-%02d\n",
+			(sink->mfg_year + 1990), (sink->mfg_week));
+	n += sprintf(buf + n, " - name    : %s", sink->prod_name);
+	n += sprintf(buf + n, " - version : %s\n",
+			dw_sink_is_hdmi20() ? "2.0" : "1.4");
+	n += sprintf(buf + n, " - scdc    : %s\n",
+			sink->edid_mHdmiForumvsdb.mSCDC_Present ? "support" : "un-support");
+	n += sprintf(buf + n, " - max rate: %dMhz\n",
+			sink->edid_mHdmiForumvsdb.mMaxTmdsCharRate * 5);
+
+	n += sprintf(buf + n, " - dtd num: %d, svd num: %d\n",
+		sink->edid_mDtdIndex, sink->edid_mSvdIndex);
+	for (i = 0; i < sink->edid_mDtdIndex; i++)
+		n += sprintf(buf + n, " - dtd %d: %dx%d%s\n", i,
+			sink->edid_mDtd[i].mHActive,
+			sink->edid_mDtd[i].mVActive,
+			sink->edid_mDtd[i].mInterlaced ? "i" : "p");
+
+	n += sprintf(buf + n, "\n");
+
+	return n;
 }
