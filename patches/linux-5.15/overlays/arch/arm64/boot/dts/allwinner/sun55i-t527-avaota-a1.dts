@@ -30,7 +30,17 @@
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		regulator-enable-ramp-delay = <1000>;
-		gpio = <&pio PI 12 GPIO_ACTIVE_HIGH>;
+		gpio = <&pio PB 12 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	reg_usb1_vbus: usb1-vbus {
+		compatible = "regulator-fixed";
+		regulator-name = "usb1-vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-enable-ramp-delay = <1000>;
+		gpio = <&pio PB 3 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 	};
 
@@ -102,6 +112,11 @@
 
 		riscvsram1_reserved: riscvsram1@72c0000 {
 			reg = <0x0 0x072c0000 0x0 0x40000>;
+			no-map;
+		};
+
+		e906_dram_reserved: e906_dram@60000000 {
+			reg = <0x0 0x60000000 0x0 0x00a00000>;
 			no-map;
 		};
 
@@ -201,7 +216,7 @@
 
 	edp_panel_backlight: edp_backlight {
 		compatible = "pwm-backlight";
-		status = "disabled";
+		status = "okay";
 		brightness-levels = <
 			  0   1   2   3   4   5   6   7
 			  8   9  10  11  12  13  14  15
@@ -262,16 +277,6 @@
 			hsync-active = <1>;
 			/* ver_sync_polarity */
 			vsync-active = <1>;
-
-			// unused now
-			/*
-			de-active = <1>;
-			pixelclk-active = <1>;
-			syncclk-active = <0>;
-			interlaced;
-			doublescan;
-			doubleclk;
-			*/
 		};
 		ports {
 			#address-cells = <1>;
@@ -288,7 +293,7 @@
 		};
 	};
 
-	rgb_panel0_backlight: backlight0 {
+	backlight0: backlight0 {
 		compatible = "pwm-backlight";
 		status = "okay";
 		brightness-levels = <
@@ -329,59 +334,7 @@
 		pwms = <&pwm0 4 50000 0>;
 	};
 
-	rgb_panel0: panel@0 {
-		compatible = "BP101WX1";
-		status = "okay";
-		reg = <0>;
-		power0-supply = <&reg_cldo3>;
-		power1-supply = <&reg_dcdc4>;
-		power2-supply = <&reg_cldo1>;
-
-		backlight = <&rgb_panel0_backlight>;
-
-		lcd_if              = <0>;
-		lcd_width           = <150>;
-		lcd_height          = <94>;
-
-		pinctrl-0 = <&rgb18_pins_a>;
-		pinctrl-1 = <&rgb18_pins_b>;
-		pinctrl-names = "active","sleep";
-
-		panel-timing {
-			clock-frequency = <74871600>; /* pixel clock */
-			hback-porch = <88>;
-			hactive = <1280>;
-			hfront-porch = <83>;
-			hsync-len = <18>;
-			vback-porch = <23>;
-			vactive = <800>;
-			vfront-porch = <37>;
-			vsync-len = <10>;
-
-			// unused now
-			/*
-			hsync-active = <0>;
-			vsync-active = <0>;
-			de-active = <1>;
-			pixelclk-active = <1>;
-			*/
-		};
-		ports {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			rgb_panel0_in: port@0 {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				reg = <0>;
-				rgb_panel0_in_lcd0: endpoint@0 {
-					reg = <0>;
-					remote-endpoint = <&tcon0_out_panel>;
-				};
-			};
-		};
-	};
-
-	lvds_panel1_backlight: backlight1 {
+	backlight1: backlight1 {
 		compatible = "pwm-backlight";
 		status = "disabled";
 		brightness-levels = <
@@ -421,53 +374,63 @@
 		enable-gpios = <&pio PI 5 GPIO_ACTIVE_HIGH>;
 		pwms = <&pwm0 5 5000000 0>;
 	};
-
-	lvds_panel1: panel@1 {
-		compatible = "BP101WX1";
-		status = "disabled";
-		reg = <1>;
+	lvds_panel: lvds_panel@0 {
+		compatible = "sunxi-lvds";
+		status = "okay";
+		reg = <0>;
 		power0-supply = <&reg_cldo3>;
 		power1-supply = <&reg_dcdc4>;
-
-		backlight = <&lvds_panel1_backlight>;
-
-		lcd_if              = <3>;
-		lcd_width           = <150>;
-		lcd_height          = <94>;
-
-		pinctrl-0 = <&lvds2_pins_a>;
-		pinctrl-1 = <&lvds2_pins_b>;
-		pinctrl-names = "active","sleep";
-
-		panel-timing {
-			clock-frequency = <74871600>; /* pixel clock */
-			hback-porch = <88>;
-			hactive = <1280>;
-			hfront-porch = <83>;
-			hsync-len = <18>;
-			vback-porch = <23>;
-			vactive = <800>;
-			vfront-porch = <37>;
-			vsync-len = <10>;
-			// unused now
-			/*
-			hsync-active = <0>;
-			vsync-active = <0>;
-			de-active = <1>;
-			pixelclk-active = <1>;
-			*/
+		power2-supply = <&reg_cldo1>;
+		backlight = <&backlight0>;
+		bus-format = <MEDIA_BUS_FMT_RGB888_1X7X4_SPWG>;
+		display-timings {
+			native-mode = <&lvds_timing0>;
+			lvds_timing0: timing0 {
+				clock-frequency = <74871600>;
+				hback-porch = <70>;
+				hactive = <1280>;
+				hfront-porch = <83>;
+				hsync-len = <18>;
+				vback-porch = <13>;
+				vactive = <800>;
+				vfront-porch = <37>;
+				vsync-len = <10>;
+			};
 		};
-		ports {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			lvds_panel1_in: port@0 {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				reg = <0>;
-				lvds_panel1_in_lcd2: endpoint@0 {
-					reg = <0>;
-					remote-endpoint = <&tcon4_out_panel>;
-				};
+		port {
+			lvds_panel_in: endpoint {
+				remote-endpoint = <&lvds_panel_out>;
+			};
+		};
+	};
+	rgb_panel1: rgb_panel@1 {
+		compatible = "sunxi-rgb";
+		status = "disabled";
+		reg = <0>;
+		power0-supply = <&reg_cldo3>;
+		power1-supply = <&reg_dcdc4>;
+		power2-supply = <&reg_cldo1>;
+
+		backlight = <&backlight1>;
+
+		display-timings {
+			native-mode = <&rgb1_timing0>;
+
+			rgb1_timing0: timing0 {
+				clock-frequency = <74871600>;
+				hback-porch = <35>;
+				hactive = <1024>;
+				hfront-porch = <83>;
+				hsync-len = <161>;
+				vback-porch = <25>;
+				vactive = <600>;
+				vfront-porch = <15>;
+				vsync-len = <10>;
+			};
+		};
+		port {
+			rgb1_panel_in: endpoint {
+				remote-endpoint = <&rgb1_panel_out>;
 			};
 		};
 	};
@@ -486,37 +449,41 @@
 	status = "okay";
 };
 
-/* HDMI DRM */
-&tv0 {
-	status = "okay";
-};
-
-/* DP DRM */
-&tv1 {
-	status = "disabled";
-};
-
 &dlcd0 {
-	status = "disabled";
-	panel = <&rgb_panel0>;
-	ports {
-		tcon0_out: port@1 {
-			tcon0_out_panel: endpoint@2 {
-				reg = <2>;
-				remote-endpoint = <&rgb_panel0_in_lcd0>;
-			};
-		};
-	};
+	status = "okay";
 };
 
 &dlcd2 {
 	status = "disabled";
-	panel = <&lvds_panel1>;
+};
+
+&rgb1 {
+	status = "disabled";
+	pinctrl-0 = <&rgb1_24pins_a>;
+	pinctrl-1 = <&rgb1_24pins_b>;
+	pinctrl-names = "active","sleep";
 	ports {
-		tcon4_out: port@1 {
-			tcon4_out_panel: endpoint@0 {
+		port@1 {
+			reg = <1>;
+			rgb1_panel_out: endpoint@0 {
 				reg = <0>;
-				remote-endpoint = <&lvds_panel1_in_lcd2>;
+				remote-endpoint = <&rgb1_panel_in>;
+			};
+		};
+	};
+};
+&lvds0 {
+	status = "okay";
+//	dual-channel = <0>;
+	pinctrl-0 = <&lvds0_pins_a>;
+	pinctrl-1 = <&lvds0_pins_b>;
+	pinctrl-names = "active","sleep";
+	ports {
+		port@1 {
+			reg = <1>;
+			lvds_panel_out: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&lvds_panel_in>;
 			};
 		};
 	};
@@ -527,35 +494,47 @@
 };
 
 &dsi1combophy {
+	status = "disabled";
+};
+
+&tv0 {
+	status = "okay";
+};
+
+&tv1 {
+	status = "okay";
+};
+
+&hdmi {
+	bldo3-supply = <&reg_bldo3>;
+	hdmi_power0 = "bldo3";
+	hdmi_power_cnt = <1>;
+
+	hdmi_hdcp1x_enable = <1>;
+	hdmi_hdcp2x_enable = <0>;
+	hdmi_cec_enable = <0>;
+
+	inno_phy = <
+		 25000 165000 0x01000102 0x1c1c1c1c 0x00000000 0x00000000
+		165000 340000 0x01040506 0x1c1c1c1c 0x00000000 0x03030300
+		340000 600000 0x010f0f0f 0x1c1c1c1c 0x00000000 0x00000000>;
+
 	status = "okay";
 };
 
 &drm_edp {
-	status = "disabled";
+	status = "okay";
 
-	edp_ssc_en = <0>;
-	edp_ssc_mode = <0>;
-	edp_psr_support = <0>;
 	edp_colordepth = <8>; /* 6/8/10/12/16 */
 	edp_color_fmt = <0>; /* 0:RGB  1: YUV444  2: YUV422 */
 
-	lane1_sw = <0>;
-	lane1_pre = <0>;
-	lane2_sw = <0>;
-	lane2_pre = <0>;
-	lane3_sw = <0>;
-	lane3_pre = <0>;
-	efficient_training = <0>;
-
-	sink_capacity_prefer = <1>;
-	edid_timings_prefer = <1>;
-	timings_fixed = <1>;
-
 	vcc-edp-supply = <&reg_bldo3>;
 	vdd-edp-supply = <&reg_dcdc2>;
-	panel = <&edp_panel>;
 	ports {
 		edp_out: port@1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <1>;
 			edp_panel_out: endpoint@0 {
 				reg = <0>;
 				remote-endpoint = <&edp_panel_in>;
@@ -640,7 +619,7 @@
 
 	s_spi0_pins_sleep: s_spi0@1 {
 		pins = "PL10", "PL11", "PL12";
-        function = "gpio_in";
+		function = "gpio_in";
 	};
 };
 
@@ -1031,25 +1010,25 @@
 			"PD20", "PD21", "PD22","PD23","PD24","PD25","PD26","PD27";
 		      function = "dpss";
 		      drive-strength = <30>;
-	};
+	      };
 
 	rgb24_pins_b: rgb24@1 {
 		pins = "PD0", "PD1", "PD2", "PD3", "PD4", "PD5", "PD6", "PD7", "PD8", "PD9", \
 			"PD10", "PD11", "PD12", "PD13", "PD14", "PD15", "PD16", "PD17", "PD18", "PD19", \
 			"PD20", "PD21", "PD22", "PD23","PD24","PD25","PD26","PD27";
 		      function = "gpio_in";
-	};
+	      };
 
 	lvds0_pins_a: lvds0@0 {
 		pins = "PD0", "PD1", "PD2", "PD3", "PD4", "PD5", "PD6", "PD7", "PD8", "PD9";
 		      function = "lvds0";
 		      drive-strength = <30>;
-	};
+	      };
 
 	lvds0_pins_b: lvds0@1 {
 		      pins = "PD0", "PD1", "PD2", "PD3", "PD4", "PD5", "PD6", "PD7", "PD8", "PD9";
 		      function = "gpio_in";
-	};
+	      };
 
 	nand0_pins_default: nand0@0 {
 		pins = "PC0", "PC1", "PC2", "PC5",
@@ -1129,7 +1108,7 @@
 
 	spi0_pins_sleep: spi0@2 {
 		pins = "PJ20", "PJ21", "PJ22", "PJ23", "PJ25", "PJ26";
-        function = "gpio_in";
+		function = "gpio_in";
 	};
 };
 
@@ -1137,6 +1116,42 @@
 	auto_print@54321 {
 		reg = <0x0 0x54321 0x0 0x0>;
 		device_type = "auto_print";
+		status = "okay";
+	};
+	car_reverse: car-reverse {
+		compatible = "allwinner,sunxi-car-reverse";
+
+		/* video source setting*/
+		video_channel = <0>;
+		video_source = <0>;
+		format_type = <0>;
+		video_source_width = <1920>;
+		video_source_height = <1080>;
+		src_size_adaptive = <1>;
+		/* display setting */
+		overview_type = <1>;
+		screen_width = <1280>;
+		screen_height = <800>;
+		screen_size_adaptive = <1>;
+		discard_frame = <0>;
+		di_used = <0>;
+		g2d_used = <1>;
+		rotation = <0>;
+		/* auxiliary line setting */
+		auxiliary_line_type = <1>;
+		aux_angle = <0>;
+		aux_lr = <0>;
+		reverse_int_pin = <&pio PI 15 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	gpio_leds {
+		compatible = "allwinner,sunxi-gpio-leds";
+		supply-num = <1>;
+		gpio1-supply = <&reg_bldo1>;
+		gpio-pins = <&pio PG 10 GPIO_ACTIVE_LOW>, <&pio PC 7 GPIO_ACTIVE_LOW>;
+		pin-names = "normal_led", "standby_led";
+		init-status = <GPIO_ACTIVE_HIGH>, <GPIO_ACTIVE_LOW>;
 		status = "okay";
 	};
 
@@ -1172,9 +1187,9 @@
 	};
 
 	e906_rproc: e906_rproc@7130000 {
-		mboxes = <&msgbox 8>;
-		mbox-names = "arm-kick";
-		memory-region = <&riscvsram0_reserved>, <&riscvsram1_reserved>, <&rv_vdev0buffer>, <&rv_vdev0vring0>, <&rv_vdev0vring1>;
+		mboxes = <&msgbox 8>, <&msgbox 10>;
+		mbox-names = "arm-kick", "arm-standby";
+		memory-region = <&riscvsram0_reserved>, <&riscvsram1_reserved>, <&rv_vdev0buffer>, <&rv_vdev0vring0>, <&rv_vdev0vring1>, <&e906_dram_reserved>;
 		memory-mappings =
 			/* < DA		len		PA >	*/
 			/* DSP RAM */
@@ -1189,6 +1204,8 @@
 			< 0x40000000	0x40000		0x072c0000 >,
 			/* DRAM SPACE */
 			< 0x40040000	0x3ffc0000	0x40040000>;
+		standby-ctrl-en = <0x1>;
+		standby-record-reg = <0x07090114>;
 		status = "okay";
 	};
 
@@ -2366,7 +2383,7 @@
 				0x00 0xfb 0x00 0x00 0xfb 0x00 0x00 0xfb
 				0x00 0x00 0xf6 0x00 0x00 0xf6 0x00 0xf6>;
 		};
-	};
+			  };
 };
 
 &twi7 {
@@ -2615,7 +2632,7 @@
 	resets = <&ccu RST_BUS_PCIE_USB3>;
 	phy_use_sel = <1>; /* 0:PCIE; 1:USB3 */
 	status = "okay";
-};
+ };
 
 &gpu {
 	gpu_idle = <1>;
@@ -3256,11 +3273,11 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 &i2s2_plat {
 	tdm-num		= <2>;
 	tx-pin		= <0 1 2 3>;
-	/* e.g.
-	* tx-pin0-map0 = <0xFEDC3210> -> tx_pin_map[0][0] (Dout0-slot[7:0]  map channel[15:12, 3:0])
-	* tx-pin0-map1 = <0x3210FEDC> -> tx_pin_map[0][1] (Dout0-slot[15:8] map channel[3:0, 15:12])
-	* tx-pin1-map0 = <0x76543210> -> tx_pin_map[1][0] (Dout1-slot[7:0]  map channel[7:0])
-	*/
+/* e.g.
+ * tx-pin0-map0 = <0xFEDC3210> -> tx_pin_map[0][0] (Dout0-slot[7:0]  map channel[15:12, 3:0])
+ * tx-pin0-map1 = <0x3210FEDC> -> tx_pin_map[0][1] (Dout0-slot[15:8] map channel[3:0, 15:12])
+ * tx-pin1-map0 = <0x76543210> -> tx_pin_map[1][0] (Dout1-slot[7:0]  map channel[7:0])
+ */
 	tx-pin0-map0	= <0x76543210>;
 	tx-pin0-map1	= <0xFEDCBA98>;
 	tx-pin1-map0	= <0x76543210>;
@@ -3333,28 +3350,6 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 	};
 };
 
-&hdmi {
-	hdmi_used = <1>;
-	bldo3-supply = <&reg_bldo3>;
-	hdmi_power0 = "bldo3";
-	hdmi_power_cnt = <1>;
-	hdmi_hdcp_enable = <1>;
-	hdmi_hdcp22_enable = <0>;
-	hdmi_cts_compatibility = <0>;
-	hdmi_cec_support = <1>;
-	hdmi_cec_super_standby = <1>;
-	hdmi_skip_bootedid = <1>;
-
-	ddc_en_io_ctrl = <0>;
-	power_io_ctrl = <0>;
-
-	inno_phy = <
-		 25000 165000 0x01000102 0x1c1c1c1c 0x00000000 0x00000000
-		165000 340000 0x01040506 0x1c1c1c1c 0x00000000 0x03030300
-		340000 600000 0x010f0f0f 0x1c1c1c1c 0x00000000 0x00000000>;
-
-	status = "okay";
-};
 
 &cpu0 {
 	cpu-supply = <&reg_dcdc1>;
@@ -3533,22 +3528,5 @@ chn_cfg_mode     : Hardware DE channel allocation config. 0:single display with 
 			type = "critical";
 			hysteresis = <0>;
 		};
-	};
-};
-
-&pd1 {
-	/* pk */
-	pd1_vi@A523_PCK_VI {
-		ppu-always-on;
-	};
-
-	/* pd */
-	pd1_vo0@A523_PCK_VO0 {
-		ppu-always-on;
-	};
-
-	/* pj */
-	pd1_vo1@A523_PCK_VO1 {
-		ppu-always-on;
 	};
 };
