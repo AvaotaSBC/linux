@@ -26,8 +26,8 @@
 #include <linux/stmmac.h>
 #include <sunxi-sid.h>
 
-#include "stmmac.h"
-#include "stmmac_platform.h"
+#include "stmmac/stmmac.h"
+#include "stmmac/stmmac_platform.h"
 
 #include "dwmac-sunxi.h"
 
