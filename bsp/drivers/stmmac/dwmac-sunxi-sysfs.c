@@ -20,7 +20,8 @@
 #include <net/tcp.h>
 #include <net/udp.h>
 #include <net/tc_act/tc_gact.h>
-#include "stmmac.h"
+
+#include "stmmac/stmmac.h"
 
 #include "dwmac-sunxi-sysfs.h"
 

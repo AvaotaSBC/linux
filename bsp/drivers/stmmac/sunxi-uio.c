@@ -16,8 +16,9 @@
 #include <linux/of_mdio.h>
 #include <linux/slab.h>
 #include <linux/version.h>
-#include "stmmac_ptp.h"
-#include "stmmac.h"
+
+#include "stmmac/stmmac_ptp.h"
+#include "stmmac/stmmac.h"
 #include "hwif.h"
 
 #define DRIVER_NAME	"sunxi_uio"
