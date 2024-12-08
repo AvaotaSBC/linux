@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          repository: 'AvaotaSBC/AvaotaOS'
         
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
