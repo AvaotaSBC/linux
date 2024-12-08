@@ -25,7 +25,7 @@ jobs:
       matrix:
         board:
           - avaota-a1
-    uses: AvaotaSBC/AvaotaOS/.github/workflows/Build-Kernel.yaml@main
+    uses: AvaotaSBC/linux/.github/workflows/Build-Kernel.yaml@main
     needs: [prepare_release]
     with:
       config-board: ${{ matrix.board }}
