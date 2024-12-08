@@ -850,6 +850,8 @@ static inline void sk_add_bind_node(struct sock *sk,
 	hlist_for_each_entry_safe(__sk, tmp, list, sk_node)
 #define sk_for_each_bound(__sk, list) \
 	hlist_for_each_entry(__sk, list, sk_bind_node)
+#define sk_for_each_bound_safe(__sk, tmp, list) \
+	hlist_for_each_entry_safe(__sk, tmp, list, sk_bind_node)
 
 /**
  * sk_for_each_entry_offset_rcu - iterate over a list at a given struct offset
@@ -1460,13 +1462,21 @@ proto_memory_pressure(struct proto *prot)
 
 
 #ifdef CONFIG_PROC_FS
-/* Called with local bh disabled */
-void sock_prot_inuse_add(struct net *net, struct proto *prot, int inc);
+#define PROTO_INUSE_NR	64	/* should be enough for the first time */
+struct prot_inuse {
+	int val[PROTO_INUSE_NR];
+};
+
+static inline void sock_prot_inuse_add(const struct net *net,
+				       const struct proto *prot, int val)
+{
+	this_cpu_add(net->core.prot_inuse->val[prot->inuse_idx], val);
+}
 int sock_prot_inuse_get(struct net *net, struct proto *proto);
 int sock_inuse_get(struct net *net);
 #else
-static inline void sock_prot_inuse_add(struct net *net, struct proto *prot,
-		int inc)
+static inline void sock_prot_inuse_add(const struct net *net,
+				       const struct proto *prot, int val)
 {
 }
 #endif
