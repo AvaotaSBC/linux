@@ -1,0 +1,34 @@
+name: Build Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  
+permissions:
+  contents: write
+
+jobs:
+  prepare_release:
+    runs-on: ubuntu-latest
+    steps:
+      - id: last-release
+        uses: pozetroninc/github-action-get-latest-release@master
+        with:
+          repository: ${{ github.repository }}
+    outputs:
+      release_id: ${{ steps.last-release.outputs.id }}
+      release_ver: ${{ steps.last-release.outputs.release }}
+
+  build-kernel:
+    strategy:
+      matrix:
+        board:
+          - avaota-a1
+    uses: AvaotaSBC/AvaotaOS/.github/workflows/Build-AvaotaOS-Kernel.yaml@main
+    needs: [prepare_release]
+    with:
+      config-board: ${{ matrix.board }}
+      config-release_id: ${{ needs.prepare_release.outputs.release_id }}
+      config-release_ver: ${{ needs.prepare_release.outputs.release_ver }}
+      config-kernel-target: bsp
