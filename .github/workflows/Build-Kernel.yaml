@@ -1,4 +1,4 @@
-name: Build-AvaotaOS-Kernel
+name: Build-Kernel
 
 on:
   workflow_call:
