@@ -2897,7 +2897,7 @@
 			reset-names = "npu_rst";
 			interrupt-names = "npu";
 			npu-vf = <696>;
-			npu-regulator = <1>;
+			npu-setvol = <1>;
 			power-domains = <&pd A523_PD_NPU>;
 			status = "okay";
 		};
@@ -5015,12 +5015,23 @@
 				opp-hz = /bits/ 64 <744000000>;
 				opp-microvolt = <0>;
 				opp-microvolt-vf4920 = <900000>;
+				/* Not use: only for performance test
+				   opp-microvolt-vf2920 = <900000>;
+				   opp-microvolt-vf3920 = <900000>;
+				   opp-microvolt-vf21920 = <900000>;
+				   opp-microvolt-vf31920 = <900000>;
+				*/
 			};
 
 			/* Not use: only for performance test */
 			opp@792000000 {
 				opp-hz = /bits/ 64 <792000000>;
 				opp-microvolt = <0>;
+				/* opp-microvolt-vf2950 = <900000>;
+				   opp-microvolt-vf3950 = <900000>;
+				   opp-microvolt-vf21950 = <900000>;
+				   opp-microvolt-vf31950 = <900000>;
+				*/
 			};
 		};
 
