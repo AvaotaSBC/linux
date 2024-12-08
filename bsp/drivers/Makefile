@@ -106,5 +106,8 @@ obj-y += pstore/
 # FS
 obj-y += fs/
 
+obj-y += andes_adaptor/
+
 #awlink
 obj-y += awlink/
+

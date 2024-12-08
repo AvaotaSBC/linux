@@ -109,6 +109,9 @@ source "bsp/drivers/pstore/Kconfig"
 # FS
 source "bsp/drivers/fs/Kconfig"
 
+#andes adaptor
+source "bsp/drivers/andes_adaptor/Kconfig"
+
 #awlink
 source "bsp/drivers/awlink/Kconfig"
 
