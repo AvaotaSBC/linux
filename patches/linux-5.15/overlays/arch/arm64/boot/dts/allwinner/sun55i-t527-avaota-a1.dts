@@ -216,7 +216,7 @@
 
 	edp_panel_backlight: edp_backlight {
 		compatible = "pwm-backlight";
-		status = "okay";
+		status = "disabled";
 		brightness-levels = <
 			  0   1   2   3   4   5   6   7
 			  8   9  10  11  12  13  14  15
@@ -258,7 +258,7 @@
 
 	edp_panel: edp_panel {
 		compatible = "edp-general-panel";
-		status = "okay";
+		status = "disabled";
 		power0-supply = <&reg_dcdc4>;
 
 		backlight = <&edp_panel_backlight>;
@@ -523,7 +523,7 @@
 };
 
 &drm_edp {
-	status = "okay";
+	status = "disabled";
 
 	edp_colordepth = <8>; /* 6/8/10/12/16 */
 	edp_color_fmt = <0>; /* 0:RGB  1: YUV444  2: YUV422 */
@@ -1061,6 +1061,7 @@
 			"PH4", "PH5", "PH6", "PH7",
 			 "PH9", "PH10","PH13","PH14",
 			  "PH15","PH16","PH17","PH18";
+		muxsel = <5>; /* for uboot used */
 		drive-strength = <40>;
 		function = "gmac0";
 		bias-pull-up;
