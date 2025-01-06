@@ -2753,12 +2753,8 @@ bfq_setup_cooperator(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 	struct bfq_queue *in_service_bfqq, *new_bfqq;
 
 	/* if a merge has already been setup, then proceed with that first */
-	new_bfqq = bfqq->new_bfqq;
-	if (new_bfqq) {
-		while (new_bfqq->new_bfqq)
-			new_bfqq = new_bfqq->new_bfqq;
-		return new_bfqq;
-	}
+	if (bfqq->new_bfqq)
+		return bfqq->new_bfqq;
 
 	/*
 	 * Check delayed stable merge for rotational or non-queueing
@@ -2981,12 +2977,10 @@ void bfq_release_process_ref(struct bfq_data *bfqd, struct bfq_queue *bfqq)
 	bfq_put_queue(bfqq);
 }
 
-static struct bfq_queue *bfq_merge_bfqqs(struct bfq_data *bfqd,
-					 struct bfq_io_cq *bic,
-					 struct bfq_queue *bfqq)
+static void
+bfq_merge_bfqqs(struct bfq_data *bfqd, struct bfq_io_cq *bic,
+		struct bfq_queue *bfqq, struct bfq_queue *new_bfqq)
 {
-	struct bfq_queue *new_bfqq = bfqq->new_bfqq;
-
 	bfq_log_bfqq(bfqd, bfqq, "merging with queue %lu",
 		(unsigned long)new_bfqq->pid);
 	/* Save weight raising and idle window of the merged queues */
@@ -3080,8 +3074,6 @@ static struct bfq_queue *bfq_merge_bfqqs(struct bfq_data *bfqd,
 	bfq_reassign_last_bfqq(bfqq, new_bfqq);
 
 	bfq_release_process_ref(bfqd, bfqq);
-
-	return new_bfqq;
 }
 
 static bool bfq_allow_bio_merge(struct request_queue *q, struct request *rq,
@@ -3117,8 +3109,14 @@ static bool bfq_allow_bio_merge(struct request_queue *q, struct request *rq,
 		 * fulfilled, i.e., bic can be redirected to new_bfqq
 		 * and bfqq can be put.
 		 */
-		while (bfqq != new_bfqq)
-			bfqq = bfq_merge_bfqqs(bfqd, bfqd->bio_bic, bfqq);
+		bfq_merge_bfqqs(bfqd, bfqd->bio_bic, bfqq,
+				new_bfqq);
+		/*
+		 * If we get here, bio will be queued into new_queue,
+		 * so use new_bfqq to decide whether bio and rq can be
+		 * merged.
+		 */
+		bfqq = new_bfqq;
 
 		/*
 		 * Change also bqfd->bio_bfqq, as
@@ -5480,7 +5478,9 @@ bfq_do_early_stable_merge(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 	 * state before killing it.
 	 */
 	bfqq->bic = bic;
-	return bfq_merge_bfqqs(bfqd, bic, bfqq);
+	bfq_merge_bfqqs(bfqd, bic, bfqq, new_bfqq);
+
+	return new_bfqq;
 }
 
 /*
@@ -5912,7 +5912,6 @@ static bool __bfq_insert_request(struct bfq_data *bfqd, struct request *rq)
 	bool waiting, idle_timer_disabled = false;
 
 	if (new_bfqq) {
-		struct bfq_queue *old_bfqq = bfqq;
 		/*
 		 * Release the request's reference to the old bfqq
 		 * and make sure one is taken to the shared queue.
@@ -5928,18 +5927,18 @@ static bool __bfq_insert_request(struct bfq_data *bfqd, struct request *rq)
 		 * then complete the merge and redirect it to
 		 * new_bfqq.
 		 */
-		if (bic_to_bfqq(RQ_BIC(rq), 1) == bfqq) {
-			while (bfqq != new_bfqq)
-				bfqq = bfq_merge_bfqqs(bfqd, RQ_BIC(rq), bfqq);
-		}
+		if (bic_to_bfqq(RQ_BIC(rq), 1) == bfqq)
+			bfq_merge_bfqqs(bfqd, RQ_BIC(rq),
+					bfqq, new_bfqq);
 
-		bfq_clear_bfqq_just_created(old_bfqq);
+		bfq_clear_bfqq_just_created(bfqq);
 		/*
 		 * rq is about to be enqueued into new_bfqq,
 		 * release rq reference on bfqq
 		 */
-		bfq_put_queue(old_bfqq);
+		bfq_put_queue(bfqq);
 		rq->elv.priv[1] = new_bfqq;
+		bfqq = new_bfqq;
 	}
 
 	bfq_update_io_thinktime(bfqd, bfqq);
@@ -6471,7 +6470,7 @@ bfq_split_bfqq(struct bfq_io_cq *bic, struct bfq_queue *bfqq)
 {
 	bfq_log_bfqq(bfqq->bfqd, bfqq, "splitting queue");
 
-	if (bfqq_process_refs(bfqq) == 1 && !bfqq->new_bfqq) {
+	if (bfqq_process_refs(bfqq) == 1) {
 		bfqq->pid = current->pid;
 		bfq_clear_bfqq_coop(bfqq);
 		bfq_clear_bfqq_split_coop(bfqq);
@@ -6565,31 +6564,6 @@ static void bfq_prepare_request(struct request *rq)
 	rq->elv.priv[0] = rq->elv.priv[1] = NULL;
 }
 
-static struct bfq_queue *bfq_waker_bfqq(struct bfq_queue *bfqq)
-{
-	struct bfq_queue *new_bfqq = bfqq->new_bfqq;
-	struct bfq_queue *waker_bfqq = bfqq->waker_bfqq;
-
-	if (!waker_bfqq)
-		return NULL;
-
-	while (new_bfqq) {
-		if (new_bfqq == waker_bfqq) {
-			/*
-			 * If waker_bfqq is in the merge chain, and current
-			 * is the only procress.
-			 */
-			if (bfqq_process_refs(waker_bfqq) == 1)
-				return NULL;
-			break;
-		}
-
-		new_bfqq = new_bfqq->new_bfqq;
-	}
-
-	return waker_bfqq;
-}
-
 /*
  * If needed, init rq, allocate bfq data structures associated with
  * rq, and increment reference counters in the destination bfq_queue
@@ -6650,7 +6624,7 @@ static struct bfq_queue *bfq_init_rq(struct request *rq)
 		/* If the queue was seeky for too long, break it apart. */
 		if (bfq_bfqq_coop(bfqq) && bfq_bfqq_split_coop(bfqq) &&
 			!bic->stably_merged) {
-			struct bfq_queue *waker_bfqq = bfq_waker_bfqq(bfqq);
+			struct bfq_queue *old_bfqq = bfqq;
 
 			/* Update bic before losing reference to bfqq */
 			if (bfq_bfqq_in_large_burst(bfqq))
@@ -6669,7 +6643,7 @@ static struct bfq_queue *bfq_init_rq(struct request *rq)
 				bfqq_already_existing = true;
 
 			if (!bfqq_already_existing) {
-				bfqq->waker_bfqq = waker_bfqq;
+				bfqq->waker_bfqq = old_bfqq->waker_bfqq;
 				bfqq->tentative_waker_bfqq = NULL;
 
 				/*
@@ -6679,7 +6653,7 @@ static struct bfq_queue *bfq_init_rq(struct request *rq)
 				 * woken_list of the waker. See
 				 * bfq_check_waker for details.
 				 */
-				if (waker_bfqq)
+				if (bfqq->waker_bfqq)
 					hlist_add_head(&bfqq->woken_list_node,
 						       &bfqq->waker_bfqq->woken_list);
 			}
@@ -6701,8 +6675,7 @@ static struct bfq_queue *bfq_init_rq(struct request *rq)
 	 * addition, if the queue has also just been split, we have to
 	 * resume its state.
 	 */
-	if (likely(bfqq != &bfqd->oom_bfqq) && !bfqq->new_bfqq &&
-	    bfqq_process_refs(bfqq) == 1) {
+	if (likely(bfqq != &bfqd->oom_bfqq) && bfqq_process_refs(bfqq) == 1) {
 		bfqq->bic = bic;
 		if (split) {
 			/*

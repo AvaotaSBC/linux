@@ -441,7 +441,6 @@ static int remove_device_files(struct super_block *sb,
 		return PTR_ERR(dir);
 	}
 	simple_recursive_removal(dir, NULL);
-	dput(dir);
 	return 0;
 }
 

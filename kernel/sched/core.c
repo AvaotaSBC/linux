@@ -1203,24 +1203,27 @@ int tg_nop(struct task_group *tg, void *data)
 static void set_load_weight(struct task_struct *p, bool update_load)
 {
 	int prio = p->static_prio - MAX_RT_PRIO;
-	struct load_weight lw;
+	struct load_weight *load = &p->se.load;
 
+	/*
+	 * SCHED_IDLE tasks get minimal weight:
+	 */
 	if (task_has_idle_policy(p)) {
-		lw.weight = scale_load(WEIGHT_IDLEPRIO);
-		lw.inv_weight = WMULT_IDLEPRIO;
-	} else {
-		lw.weight = scale_load(sched_prio_to_weight[prio]);
-		lw.inv_weight = sched_prio_to_wmult[prio];
+		load->weight = scale_load(WEIGHT_IDLEPRIO);
+		load->inv_weight = WMULT_IDLEPRIO;
+		return;
 	}
 
 	/*
 	 * SCHED_OTHER tasks have to update their load when changing their
 	 * weight
 	 */
-	if (update_load && p->sched_class == &fair_sched_class)
-		reweight_task(p, &lw);
-	else
-		p->se.load = lw;
+	if (update_load && p->sched_class == &fair_sched_class) {
+		reweight_task(p, prio);
+	} else {
+		load->weight = scale_load(sched_prio_to_weight[prio]);
+		load->inv_weight = sched_prio_to_wmult[prio];
+	}
 }
 
 #ifdef CONFIG_UCLAMP_TASK
@@ -9101,22 +9104,6 @@ static int cpuset_cpu_inactive(unsigned int cpu)
 	return 0;
 }
 
-static inline void sched_smt_present_inc(int cpu)
-{
-#ifdef CONFIG_SCHED_SMT
-	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
-		static_branch_inc_cpuslocked(&sched_smt_present);
-#endif
-}
-
-static inline void sched_smt_present_dec(int cpu)
-{
-#ifdef CONFIG_SCHED_SMT
-	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
-		static_branch_dec_cpuslocked(&sched_smt_present);
-#endif
-}
-
 int sched_cpu_activate(unsigned int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
@@ -9128,10 +9115,13 @@ int sched_cpu_activate(unsigned int cpu)
 	 */
 	balance_push_set(cpu, false);
 
+#ifdef CONFIG_SCHED_SMT
 	/*
 	 * When going up, increment the number of cores with SMT present.
 	 */
-	sched_smt_present_inc(cpu);
+	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+		static_branch_inc_cpuslocked(&sched_smt_present);
+#endif
 	set_cpu_active(cpu, true);
 
 	if (sched_smp_initialized) {
@@ -9200,12 +9190,13 @@ int sched_cpu_deactivate(unsigned int cpu)
 	}
 	rq_unlock_irqrestore(rq, &rf);
 
+#ifdef CONFIG_SCHED_SMT
 	/*
 	 * When going down, decrement the number of cores with SMT present.
 	 */
-	sched_smt_present_dec(cpu);
+	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+		static_branch_dec_cpuslocked(&sched_smt_present);
 
-#ifdef CONFIG_SCHED_SMT
 	sched_core_cpu_deactivate(cpu);
 #endif
 
@@ -9214,7 +9205,6 @@ int sched_cpu_deactivate(unsigned int cpu)
 
 	ret = cpuset_cpu_inactive(cpu);
 	if (ret) {
-		sched_smt_present_inc(cpu);
 		balance_push_set(cpu, false);
 		set_cpu_active(cpu, true);
 		return ret;
@@ -10838,7 +10828,7 @@ static ssize_t cpu_max_write(struct kernfs_open_file *of,
 {
 	struct task_group *tg = css_tg(of_css(of));
 	u64 period = tg_get_cfs_period(tg);
-	u64 burst = tg->cfs_bandwidth.burst;
+	u64 burst = tg_get_cfs_burst(tg);
 	u64 quota;
 	int ret;
 

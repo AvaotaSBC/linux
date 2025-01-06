@@ -317,8 +317,6 @@ found:
 			goto fail_unlock;
 		}
 
-		sock_set_flag(sk, SOCK_RCU_FREE);
-
 		sk_add_node_rcu(sk, &hslot->head);
 		hslot->count++;
 		sock_prot_inuse_add(sock_net(sk), sk->sk_prot, 1);
@@ -335,7 +333,7 @@ found:
 		hslot2->count++;
 		spin_unlock(&hslot2->lock);
 	}
-
+	sock_set_flag(sk, SOCK_RCU_FREE);
 	error = 0;
 fail_unlock:
 	spin_unlock_bh(&hslot->lock);
@@ -400,9 +398,9 @@ static int compute_score(struct sock *sk, struct net *net,
 	return score;
 }
 
-INDIRECT_CALLABLE_SCOPE
-u32 udp_ehashfn(const struct net *net, const __be32 laddr, const __u16 lport,
-		const __be32 faddr, const __be16 fport)
+static u32 udp_ehashfn(const struct net *net, const __be32 laddr,
+		       const __u16 lport, const __be32 faddr,
+		       const __be16 fport)
 {
 	static u32 udp_ehash_secret __read_mostly;
 
@@ -410,6 +408,22 @@ u32 udp_ehashfn(const struct net *net, const __be32 laddr, const __u16 lport,
 
 	return __inet_ehashfn(laddr, lport, faddr, fport,
 			      udp_ehash_secret + net_hash_mix(net));
+}
+
+static struct sock *lookup_reuseport(struct net *net, struct sock *sk,
+				     struct sk_buff *skb,
+				     __be32 saddr, __be16 sport,
+				     __be32 daddr, unsigned short hnum)
+{
+	struct sock *reuse_sk = NULL;
+	u32 hash;
+
+	if (sk->sk_reuseport && sk->sk_state != TCP_ESTABLISHED) {
+		hash = udp_ehashfn(net, daddr, hnum, saddr, sport);
+		reuse_sk = reuseport_select_sock(sk, hash, skb,
+						 sizeof(struct udphdr));
+	}
+	return reuse_sk;
 }
 
 /* called with rcu_read_lock() */
@@ -422,28 +436,15 @@ static struct sock *udp4_lib_lookup2(struct net *net,
 {
 	struct sock *sk, *result;
 	int score, badness;
-	bool need_rescore;
 
 	result = NULL;
 	badness = 0;
 	udp_portaddr_for_each_entry_rcu(sk, &hslot2->head) {
-		need_rescore = false;
-rescore:
-		score = compute_score(need_rescore ? result : sk, net, saddr,
-				      sport, daddr, hnum, dif, sdif);
+		score = compute_score(sk, net, saddr, sport,
+				      daddr, hnum, dif, sdif);
 		if (score > badness) {
 			badness = score;
-
-			if (need_rescore)
-				continue;
-
-			if (sk->sk_state == TCP_ESTABLISHED) {
-				result = sk;
-				continue;
-			}
-
-			result = inet_lookup_reuseport(net, sk, skb, sizeof(struct udphdr),
-						       saddr, sport, daddr, hnum, udp_ehashfn);
+			result = lookup_reuseport(net, sk, skb, saddr, sport, daddr, hnum);
 			if (!result) {
 				result = sk;
 				continue;
@@ -457,14 +458,9 @@ rescore:
 			if (IS_ERR(result))
 				continue;
 
-			/* compute_score is too long of a function to be
-			 * inlined, and calling it again here yields
-			 * measureable overhead for some
-			 * workloads. Work around it by jumping
-			 * backwards to rescore 'result'.
-			 */
-			need_rescore = true;
-			goto rescore;
+			badness = compute_score(result, net, saddr, sport,
+						daddr, hnum, dif, sdif);
+
 		}
 	}
 	return result;
@@ -487,8 +483,7 @@ static struct sock *udp4_lookup_run_bpf(struct net *net,
 	if (no_reuseport || IS_ERR_OR_NULL(sk))
 		return sk;
 
-	reuse_sk = inet_lookup_reuseport(net, sk, skb, sizeof(struct udphdr),
-					 saddr, sport, daddr, hnum, udp_ehashfn);
+	reuse_sk = lookup_reuseport(net, sk, skb, saddr, sport, daddr, hnum);
 	if (reuse_sk)
 		sk = reuse_sk;
 	return sk;
@@ -1144,17 +1139,16 @@ int udp_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 
 	if (msg->msg_controllen) {
 		err = udp_cmsg_send(sk, msg, &ipc.gso_size);
-		if (err > 0) {
+		if (err > 0)
 			err = ip_cmsg_send(sk, msg, &ipc,
 					   sk->sk_family == AF_INET6);
-			connected = 0;
-		}
 		if (unlikely(err < 0)) {
 			kfree(ipc.opt);
 			return err;
 		}
 		if (ipc.opt)
 			free = 1;
+		connected = 0;
 	}
 	if (!ipc.opt) {
 		struct ip_options_rcu *inet_opt;

@@ -38,7 +38,6 @@
 #include <linux/slab.h>
 #include <linux/kthread.h>
 #include <linux/namei.h>
-#include <linux/freezer.h>
 
 #include <linux/sunrpc/addr.h>
 #include <linux/nfs_ssc.h>
@@ -1318,12 +1317,13 @@ try_again:
 		/* found a match */
 		if (ni->nsui_busy) {
 			/*  wait - and try again */
-			prepare_to_wait(&nn->nfsd_ssc_waitq, &wait, TASK_IDLE);
+			prepare_to_wait(&nn->nfsd_ssc_waitq, &wait,
+				TASK_INTERRUPTIBLE);
 			spin_unlock(&nn->nfsd_ssc_lock);
 
 			/* allow 20secs for mount/unmount for now - revisit */
-			if (kthread_should_stop() ||
-					(freezable_schedule_timeout(20*HZ) == 0)) {
+			if (signal_pending(current) ||
+					(schedule_timeout(20*HZ) == 0)) {
 				finish_wait(&nn->nfsd_ssc_waitq, &wait);
 				kfree(work);
 				return nfserr_eagain;
@@ -2435,10 +2435,10 @@ nfsd4_proc_null(struct svc_rqst *rqstp)
 	return rpc_success;
 }
 
-static inline void nfsd4_increment_op_stats(struct nfsd_net *nn, u32 opnum)
+static inline void nfsd4_increment_op_stats(u32 opnum)
 {
 	if (opnum >= FIRST_NFS4_OP && opnum <= LAST_NFS4_OP)
-		percpu_counter_inc(&nn->counter[NFSD_STATS_NFS4_OP(opnum)]);
+		percpu_counter_inc(&nfsdstats.counter[NFSD_STATS_NFS4_OP(opnum)]);
 }
 
 static const struct nfsd4_operation nfsd4_ops[];
@@ -2713,7 +2713,7 @@ encode_op:
 					   status, nfsd4_op_name(op->opnum));
 
 		nfsd4_cstate_clear_replay(cstate);
-		nfsd4_increment_op_stats(nn, op->opnum);
+		nfsd4_increment_op_stats(op->opnum);
 	}
 
 	fh_put(current_fh);

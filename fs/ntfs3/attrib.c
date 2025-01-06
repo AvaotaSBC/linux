@@ -242,7 +242,7 @@ int attr_make_nonresident(struct ntfs_inode *ni, struct ATTRIB *attr,
 	struct ntfs_sb_info *sbi;
 	struct ATTRIB *attr_s;
 	struct MFT_REC *rec;
-	u32 used, asize, rsize, aoff;
+	u32 used, asize, rsize, aoff, align;
 	bool is_data;
 	CLST len, alen;
 	char *next;
@@ -263,13 +263,10 @@ int attr_make_nonresident(struct ntfs_inode *ni, struct ATTRIB *attr,
 	rsize = le32_to_cpu(attr->res.data_size);
 	is_data = attr->type == ATTR_DATA && !attr->name_len;
 
-	/* len - how many clusters required to store 'rsize' bytes */
-	if (is_attr_compressed(attr)) {
-		u8 shift = sbi->cluster_bits + NTFS_LZNT_CUNIT;
-		len = ((rsize + (1u << shift) - 1) >> shift) << NTFS_LZNT_CUNIT;
-	} else {
-		len = bytes_to_cluster(sbi, rsize);
-	}
+	align = sbi->cluster_size;
+	if (is_attr_compressed(attr))
+		align <<= COMPRESSION_UNIT;
+	len = (rsize + align - 1) >> sbi->cluster_bits;
 
 	run_init(run);
 
@@ -1565,7 +1562,6 @@ repack:
 
 	attr_b->nres.total_size = cpu_to_le64(total_size);
 	inode_set_bytes(&ni->vfs_inode, total_size);
-	ni->ni_flags |= NI_FLAG_UPDATE_PARENT;
 
 	mi_b->dirty = true;
 	mark_inode_dirty(&ni->vfs_inode);

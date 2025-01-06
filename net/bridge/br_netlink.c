@@ -619,7 +619,7 @@ void br_ifinfo_notify(int event, const struct net_bridge *br,
 {
 	u32 filter = RTEXT_FILTER_BRVLAN_COMPRESSED;
 
-	br_info_notify(event, br, port, filter);
+	return br_info_notify(event, br, port, filter);
 }
 
 /*

@@ -2751,7 +2751,8 @@ int ice_ena_vsi(struct ice_vsi *vsi, bool locked)
  */
 void ice_dis_vsi(struct ice_vsi *vsi, bool locked)
 {
-	bool already_down = test_bit(ICE_VSI_DOWN, vsi->state);
+	if (test_bit(ICE_VSI_DOWN, vsi->state))
+		return;
 
 	set_bit(ICE_VSI_NEEDS_RESTART, vsi->state);
 
@@ -2759,16 +2760,15 @@ void ice_dis_vsi(struct ice_vsi *vsi, bool locked)
 		if (netif_running(vsi->netdev)) {
 			if (!locked)
 				rtnl_lock();
-			already_down = test_bit(ICE_VSI_DOWN, vsi->state);
-			if (!already_down)
-				ice_vsi_close(vsi);
+
+			ice_vsi_close(vsi);
 
 			if (!locked)
 				rtnl_unlock();
-		} else if (!already_down) {
+		} else {
 			ice_vsi_close(vsi);
 		}
-	} else if (vsi->type == ICE_VSI_CTRL && !already_down) {
+	} else if (vsi->type == ICE_VSI_CTRL) {
 		ice_vsi_close(vsi);
 	}
 }

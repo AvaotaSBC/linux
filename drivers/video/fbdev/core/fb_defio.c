@@ -149,7 +149,7 @@ static vm_fault_t fb_deferred_io_mkwrite(struct vm_fault *vmf)
 	unsigned long offset;
 	vm_fault_t ret;
 
-	offset = vmf->pgoff << PAGE_SHIFT;
+	offset = (vmf->address - vmf->vma->vm_start);
 
 	/* this is a callback we get when userspace first tries to
 	write to the page. we schedule a workqueue. that workqueue

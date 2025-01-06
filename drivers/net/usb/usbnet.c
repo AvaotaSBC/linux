@@ -64,6 +64,9 @@
 
 /*-------------------------------------------------------------------------*/
 
+// randomly generated ethernet address
+static u8	node_id [ETH_ALEN];
+
 /* use ethtool to change the level for any given device */
 static int msg_level = -1;
 module_param (msg_level, int, 0);
@@ -162,13 +165,12 @@ EXPORT_SYMBOL_GPL(usbnet_get_endpoints);
 
 int usbnet_get_ethernet_addr(struct usbnet *dev, int iMACAddress)
 {
-	u8		addr[ETH_ALEN];
 	int 		tmp = -1, ret;
 	unsigned char	buf [13];
 
 	ret = usb_string(dev->udev, iMACAddress, buf, sizeof buf);
 	if (ret == 12)
-		tmp = hex2bin(addr, buf, 6);
+		tmp = hex2bin(dev->net->dev_addr, buf, 6);
 	if (tmp < 0) {
 		dev_dbg(&dev->udev->dev,
 			"bad MAC string %d fetch, %d\n", iMACAddress, tmp);
@@ -176,7 +178,6 @@ int usbnet_get_ethernet_addr(struct usbnet *dev, int iMACAddress)
 			ret = -EINVAL;
 		return ret;
 	}
-	eth_hw_addr_set(dev->net, addr);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(usbnet_get_ethernet_addr);
@@ -467,15 +468,10 @@ static enum skb_state defer_bh(struct usbnet *dev, struct sk_buff *skb,
 void usbnet_defer_kevent (struct usbnet *dev, int work)
 {
 	set_bit (work, &dev->flags);
-	if (!usbnet_going_away(dev)) {
-		if (!schedule_work(&dev->kevent))
-			netdev_dbg(dev->net,
-				   "kevent %s may have been dropped\n",
-				   usbnet_event_names[work]);
-		else
-			netdev_dbg(dev->net,
-				   "kevent %s scheduled\n", usbnet_event_names[work]);
-	}
+	if (!schedule_work (&dev->kevent))
+		netdev_dbg(dev->net, "kevent %s may have been dropped\n", usbnet_event_names[work]);
+	else
+		netdev_dbg(dev->net, "kevent %s scheduled\n", usbnet_event_names[work]);
 }
 EXPORT_SYMBOL_GPL(usbnet_defer_kevent);
 
@@ -543,8 +539,7 @@ static int rx_submit (struct usbnet *dev, struct urb *urb, gfp_t flags)
 			tasklet_schedule (&dev->bh);
 			break;
 		case 0:
-			if (!usbnet_going_away(dev))
-				__usbnet_queue_skb(&dev->rxq, skb, rx_start);
+			__usbnet_queue_skb(&dev->rxq, skb, rx_start);
 		}
 	} else {
 		netif_dbg(dev, ifdown, dev->net, "rx: stopped\n");
@@ -854,18 +849,9 @@ int usbnet_stop (struct net_device *net)
 
 	/* deferred work (timer, softirq, task) must also stop */
 	dev->flags = 0;
-	del_timer_sync(&dev->delay);
-	tasklet_kill(&dev->bh);
+	del_timer_sync (&dev->delay);
+	tasklet_kill (&dev->bh);
 	cancel_work_sync(&dev->kevent);
-
-	/* We have cyclic dependencies. Those calls are needed
-	 * to break a cycle. We cannot fall into the gaps because
-	 * we have a flag
-	 */
-	tasklet_kill(&dev->bh);
-	del_timer_sync(&dev->delay);
-	cancel_work_sync(&dev->kevent);
-
 	if (!pm)
 		usb_autopm_put_interface(dev->intf);
 
@@ -1191,8 +1177,7 @@ fail_halt:
 					   status);
 		} else {
 			clear_bit (EVENT_RX_HALT, &dev->flags);
-			if (!usbnet_going_away(dev))
-				tasklet_schedule(&dev->bh);
+			tasklet_schedule (&dev->bh);
 		}
 	}
 
@@ -1217,8 +1202,7 @@ fail_halt:
 			usb_autopm_put_interface(dev->intf);
 fail_lowmem:
 			if (resched)
-				if (!usbnet_going_away(dev))
-					tasklet_schedule(&dev->bh);
+				tasklet_schedule (&dev->bh);
 		}
 	}
 
@@ -1574,7 +1558,6 @@ static void usbnet_bh (struct timer_list *t)
 	} else if (netif_running (dev->net) &&
 		   netif_device_present (dev->net) &&
 		   netif_carrier_ok(dev->net) &&
-		   !usbnet_going_away(dev) &&
 		   !timer_pending(&dev->delay) &&
 		   !test_bit(EVENT_RX_PAUSED, &dev->flags) &&
 		   !test_bit(EVENT_RX_HALT, &dev->flags)) {
@@ -1622,7 +1605,6 @@ void usbnet_disconnect (struct usb_interface *intf)
 	usb_set_intfdata(intf, NULL);
 	if (!dev)
 		return;
-	usbnet_mark_going_away(dev);
 
 	xdev = interface_to_usbdev (intf);
 
@@ -1745,6 +1727,7 @@ usbnet_probe (struct usb_interface *udev, const struct usb_device_id *prod)
 
 	dev->net = net;
 	strscpy(net->name, "usb%d", sizeof(net->name));
+	memcpy (net->dev_addr, node_id, sizeof node_id);
 
 	/* rx and tx sides can use different message sizes;
 	 * bind() should set rx_urb_size in that case.
@@ -1769,8 +1752,7 @@ usbnet_probe (struct usb_interface *udev, const struct usb_device_id *prod)
 		// can rename the link if it knows better.
 		if ((dev->driver_info->flags & FLAG_ETHER) != 0 &&
 		    ((dev->driver_info->flags & FLAG_POINTTOPOINT) == 0 ||
-		     /* somebody touched it*/
-		     !is_zero_ether_addr(net->dev_addr)))
+		     (net->dev_addr [0] & 0x02) == 0))
 			strscpy(net->name, "eth%d", sizeof(net->name));
 		/* WLAN devices should always be named "wlan%d" */
 		if ((dev->driver_info->flags & FLAG_WLAN) != 0)
@@ -1819,9 +1801,9 @@ usbnet_probe (struct usb_interface *udev, const struct usb_device_id *prod)
 		goto out4;
 	}
 
-	/* this flags the device for user space */
-	if (!is_valid_ether_addr(net->dev_addr))
-		eth_hw_addr_random(net);
+	/* let userspace know we have a random address */
+	if (ether_addr_equal(net->dev_addr, node_id))
+		net->addr_assign_type = NET_ADDR_RANDOM;
 
 	if ((dev->driver_info->flags & FLAG_WLAN) != 0)
 		SET_NETDEV_DEVTYPE(net, &wlan_type);
@@ -1873,7 +1855,6 @@ out1:
 	 * may trigger an error resubmitting itself and, worse,
 	 * schedule a timer. So we kill it all just in case.
 	 */
-	usbnet_mark_going_away(dev);
 	cancel_work_sync(&dev->kevent);
 	del_timer_sync(&dev->delay);
 	free_percpu(net->tstats);
@@ -2232,6 +2213,7 @@ static int __init usbnet_init(void)
 	BUILD_BUG_ON(
 		sizeof_field(struct sk_buff, cb) < sizeof(struct skb_data));
 
+	eth_random_addr(node_id);
 	return 0;
 }
 module_init(usbnet_init);

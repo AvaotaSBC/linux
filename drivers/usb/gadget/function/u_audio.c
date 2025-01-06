@@ -474,24 +474,15 @@ int u_audio_start_capture(struct g_audio *audio_dev)
 	struct usb_ep *ep, *ep_fback;
 	struct uac_rtd_params *prm;
 	struct uac_params *params = &audio_dev->params;
-	int req_len, i, ret;
+	int req_len, i;
 
 	ep = audio_dev->out_ep;
 	prm = &uac->c_prm;
-	ret = config_ep_by_speed(gadget, &audio_dev->func, ep);
-	if (ret < 0) {
-		dev_err(dev, "config_ep_by_speed for out_ep failed (%d)\n", ret);
-		return ret;
-	}
-
+	config_ep_by_speed(gadget, &audio_dev->func, ep);
 	req_len = ep->maxpacket;
 
 	prm->ep_enabled = true;
-	ret = usb_ep_enable(ep);
-	if (ret < 0) {
-		dev_err(dev, "usb_ep_enable failed for out_ep (%d)\n", ret);
-		return ret;
-	}
+	usb_ep_enable(ep);
 
 	for (i = 0; i < params->req_number; i++) {
 		if (!prm->reqs[i]) {
@@ -517,18 +508,9 @@ int u_audio_start_capture(struct g_audio *audio_dev)
 		return 0;
 
 	/* Setup feedback endpoint */
-	ret = config_ep_by_speed(gadget, &audio_dev->func, ep_fback);
-	if (ret < 0) {
-		dev_err(dev, "config_ep_by_speed in_ep_fback failed (%d)\n", ret);
-		return ret; // TODO: Clean up out_ep
-	}
-
+	config_ep_by_speed(gadget, &audio_dev->func, ep_fback);
 	prm->fb_ep_enabled = true;
-	ret = usb_ep_enable(ep_fback);
-	if (ret < 0) {
-		dev_err(dev, "usb_ep_enable failed for in_ep_fback (%d)\n", ret);
-		return ret; // TODO: Clean up out_ep
-	}
+	usb_ep_enable(ep_fback);
 	req_len = ep_fback->maxpacket;
 
 	req_fback = usb_ep_alloc_request(ep_fback, GFP_ATOMIC);
@@ -583,15 +565,11 @@ int u_audio_start_playback(struct g_audio *audio_dev)
 	struct uac_params *params = &audio_dev->params;
 	unsigned int factor;
 	const struct usb_endpoint_descriptor *ep_desc;
-	int req_len, i, ret;
+	int req_len, i;
 
 	ep = audio_dev->in_ep;
 	prm = &uac->p_prm;
-	ret = config_ep_by_speed(gadget, &audio_dev->func, ep);
-	if (ret < 0) {
-		dev_err(dev, "config_ep_by_speed for in_ep failed (%d)\n", ret);
-		return ret;
-	}
+	config_ep_by_speed(gadget, &audio_dev->func, ep);
 
 	ep_desc = ep->desc;
 
@@ -620,11 +598,7 @@ int u_audio_start_playback(struct g_audio *audio_dev)
 	uac->p_residue = 0;
 
 	prm->ep_enabled = true;
-	ret = usb_ep_enable(ep);
-	if (ret < 0) {
-		dev_err(dev, "usb_ep_enable failed for in_ep (%d)\n", ret);
-		return ret;
-	}
+	usb_ep_enable(ep);
 
 	for (i = 0; i < params->req_number; i++) {
 		if (!prm->reqs[i]) {
@@ -1198,8 +1172,6 @@ void g_audio_cleanup(struct g_audio *g_audio)
 		return;
 
 	uac = g_audio->uac;
-	g_audio->uac = NULL;
-
 	card = uac->card;
 	if (card)
 		snd_card_free_when_closed(card);

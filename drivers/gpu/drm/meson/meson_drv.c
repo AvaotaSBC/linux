@@ -248,20 +248,29 @@ static int meson_drv_bind_master(struct device *dev, bool has_components)
 	if (ret)
 		goto free_drm;
 	ret = meson_canvas_alloc(priv->canvas, &priv->canvas_id_vd1_0);
-	if (ret)
-		goto free_canvas_osd1;
+	if (ret) {
+		meson_canvas_free(priv->canvas, priv->canvas_id_osd1);
+		goto free_drm;
+	}
 	ret = meson_canvas_alloc(priv->canvas, &priv->canvas_id_vd1_1);
-	if (ret)
-		goto free_canvas_vd1_0;
+	if (ret) {
+		meson_canvas_free(priv->canvas, priv->canvas_id_osd1);
+		meson_canvas_free(priv->canvas, priv->canvas_id_vd1_0);
+		goto free_drm;
+	}
 	ret = meson_canvas_alloc(priv->canvas, &priv->canvas_id_vd1_2);
-	if (ret)
-		goto free_canvas_vd1_1;
+	if (ret) {
+		meson_canvas_free(priv->canvas, priv->canvas_id_osd1);
+		meson_canvas_free(priv->canvas, priv->canvas_id_vd1_0);
+		meson_canvas_free(priv->canvas, priv->canvas_id_vd1_1);
+		goto free_drm;
+	}
 
 	priv->vsync_irq = platform_get_irq(pdev, 0);
 
 	ret = drm_vblank_init(drm, 1);
 	if (ret)
-		goto free_canvas_vd1_2;
+		goto free_drm;
 
 	/* Assign limits per soc revision/package */
 	for (i = 0 ; i < ARRAY_SIZE(meson_drm_soc_attrs) ; ++i) {
@@ -277,11 +286,11 @@ static int meson_drv_bind_master(struct device *dev, bool has_components)
 	 */
 	ret = drm_aperture_remove_framebuffers(false, &meson_driver);
 	if (ret)
-		goto free_canvas_vd1_2;
+		goto free_drm;
 
 	ret = drmm_mode_config_init(drm);
 	if (ret)
-		goto free_canvas_vd1_2;
+		goto free_drm;
 	drm->mode_config.max_width = 3840;
 	drm->mode_config.max_height = 2160;
 	drm->mode_config.funcs = &meson_mode_config_funcs;
@@ -296,7 +305,7 @@ static int meson_drv_bind_master(struct device *dev, bool has_components)
 	if (priv->afbcd.ops) {
 		ret = priv->afbcd.ops->init(priv);
 		if (ret)
-			goto free_canvas_vd1_2;
+			goto free_drm;
 	}
 
 	/* Encoder Initialization */
@@ -355,14 +364,6 @@ unbind_all:
 exit_afbcd:
 	if (priv->afbcd.ops)
 		priv->afbcd.ops->exit(priv);
-free_canvas_vd1_2:
-	meson_canvas_free(priv->canvas, priv->canvas_id_vd1_2);
-free_canvas_vd1_1:
-	meson_canvas_free(priv->canvas, priv->canvas_id_vd1_1);
-free_canvas_vd1_0:
-	meson_canvas_free(priv->canvas, priv->canvas_id_vd1_0);
-free_canvas_osd1:
-	meson_canvas_free(priv->canvas, priv->canvas_id_osd1);
 free_drm:
 	drm_dev_put(drm);
 

@@ -600,6 +600,12 @@
 			loops can be debugged more effectively on production
 			systems.
 
+	clocksource.max_cswd_read_retries= [KNL]
+			Number of clocksource_watchdog() retries due to
+			external delays before the clock will be marked
+			unstable.  Defaults to three retries, that is,
+			four attempts to read the clock under test.
+
 	clocksource.verify_n_cpus= [KNL]
 			Limit the number of CPUs checked for clocksources
 			marked with CLOCK_SOURCE_VERIFY_PERCPU that
@@ -3087,7 +3093,6 @@
 					       reg_file_data_sampling=off [X86]
 					       retbleed=off [X86]
 					       spec_store_bypass_disable=off [X86,PPC]
-					       spectre_bhi=off [X86]
 					       spectre_v2_user=off [X86]
 					       ssbd=force-off [ARM64]
 					       tsx_async_abort=off [X86]
@@ -3451,6 +3456,9 @@
 
 	noautogroup	Disable scheduler automatic task group creation.
 
+	nobats		[PPC] Do not use BATs for mapping kernel lowmem
+			on "Classic" PPC cores.
+
 	nocache		[ARM]
 
 	noclflush	[BUGS=X86] Don't use the CLFLUSH instruction
@@ -3625,6 +3633,9 @@
 	nolapic		[X86-32,APIC] Do not enable or use the local APIC.
 
 	nolapic_timer	[X86-32,APIC] Do not use the local APIC timer.
+
+	noltlbs		[PPC] Do not use large page/tlb entries for kernel
+			lowmem mapping on PPC40x and PPC8xx
 
 	nomca		[IA-64] Disable machine check abort handling
 
@@ -4333,16 +4344,6 @@
 	printk.time=	Show timing data prefixed to each printk message line
 			Format: <bool>  (1/Y/y=enable, 0/N/n=disable)
 
-	proc_mem.force_override= [KNL]
-			Format: {always | ptrace | never}
-			Traditionally /proc/pid/mem allows memory permissions to be
-			overridden without restrictions. This option may be set to
-			restrict that. Can be one of:
-			- 'always': traditional behavior always allows mem overrides.
-			- 'ptrace': only allow mem overrides for active ptracers.
-			- 'never':  never allow mem overrides.
-			If not specified, default is the CONFIG_PROC_MEM_* choice.
-
 	processor.max_cstate=	[HW,ACPI]
 			Limit processor to maximum C-state
 			max_cstate=9 overrides any DMI blacklist limit.
@@ -4353,9 +4354,11 @@
 
 	profile=	[KNL] Enable kernel profiling via /proc/profile
 			Format: [<profiletype>,]<number>
-			Param: <profiletype>: "schedule" or "kvm"
+			Param: <profiletype>: "schedule", "sleep", or "kvm"
 				[defaults to kernel profiling]
 			Param: "schedule" - profile schedule points.
+			Param: "sleep" - profile D-state sleeping (millisecs).
+				Requires CONFIG_SCHEDSTATS
 			Param: "kvm" - profile VM exits.
 			Param: <number> - step/bucket size as a power of 2 for
 				statistical time based profiling.
@@ -5402,13 +5405,16 @@
 			See Documentation/admin-guide/laptops/sonypi.rst
 
 	spectre_bhi=	[X86] Control mitigation of Branch History Injection
-			(BHI) vulnerability.  This setting affects the
+			(BHI) vulnerability. Syscalls are hardened against BHI
+			reglardless of this setting. This setting affects the
 			deployment of the HW BHI control and the SW BHB
 			clearing sequence.
 
-			on   - (default) Enable the HW or SW mitigation
-			       as needed.
-			off  - Disable the mitigation.
+			on   - unconditionally enable.
+			off  - unconditionally disable.
+			auto - (default) enable hardware mitigation
+			       (BHI_DIS_S) if available, otherwise enable
+			       alternate mitigation in KVM.
 
 	spectre_v2=	[X86] Control mitigation of Spectre variant 2
 			(indirect branch speculation) vulnerability.

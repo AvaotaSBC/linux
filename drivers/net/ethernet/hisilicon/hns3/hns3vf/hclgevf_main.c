@@ -537,8 +537,7 @@ static int hclgevf_set_handle_info(struct hclgevf_dev *hdev)
 
 	nic->ae_algo = &ae_algovf;
 	nic->pdev = hdev->pdev;
-	bitmap_copy(nic->numa_node_mask.bits, hdev->numa_node_mask.bits,
-		    MAX_NUMNODES);
+	nic->numa_node_mask = hdev->numa_node_mask;
 	nic->flags |= HNAE3_SUPPORT_VF;
 	nic->kinfo.io_base = hdev->hw.io_base;
 
@@ -2217,8 +2216,8 @@ static void hclgevf_reset_done(struct hnae3_ae_dev *ae_dev)
 			 ret);
 
 	hdev->reset_type = HNAE3_NONE_RESET;
-	if (test_and_clear_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state))
-		up(&hdev->reset_sem);
+	clear_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state);
+	up(&hdev->reset_sem);
 }
 
 static u32 hclgevf_get_fw_version(struct hnae3_handle *handle)
@@ -2589,8 +2588,8 @@ static int hclgevf_init_roce_base_info(struct hclgevf_dev *hdev)
 
 	roce->pdev = nic->pdev;
 	roce->ae_algo = nic->ae_algo;
-	bitmap_copy(roce->numa_node_mask.bits, nic->numa_node_mask.bits,
-		    MAX_NUMNODES);
+	roce->numa_node_mask = nic->numa_node_mask;
+
 	return 0;
 }
 
@@ -2722,7 +2721,8 @@ static void hclgevf_set_timer_task(struct hnae3_handle *handle, bool enable)
 	} else {
 		set_bit(HCLGEVF_STATE_DOWN, &hdev->state);
 
-		smp_mb__after_atomic(); /* flush memory to make sure DOWN is seen by service task */
+		/* flush memory to make sure DOWN is seen by service task */
+		smp_mb__before_atomic();
 		hclgevf_flush_link_update(hdev);
 	}
 }

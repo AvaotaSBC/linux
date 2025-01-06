@@ -575,6 +575,7 @@ static void bond_ipsec_del_sa_all(struct bonding *bond)
 		} else {
 			slave->dev->xfrmdev_ops->xdo_dev_state_delete(ipsec->xs);
 		}
+		ipsec->xs->xso.real_dev = NULL;
 	}
 	spin_unlock_bh(&bond->ipsec_lock);
 	rcu_read_unlock();
@@ -591,30 +592,34 @@ static bool bond_ipsec_offload_ok(struct sk_buff *skb, struct xfrm_state *xs)
 	struct net_device *real_dev;
 	struct slave *curr_active;
 	struct bonding *bond;
-	bool ok = false;
+	int err;
 
 	bond = netdev_priv(bond_dev);
 	rcu_read_lock();
 	curr_active = rcu_dereference(bond->curr_active_slave);
-	if (!curr_active)
-		goto out;
 	real_dev = curr_active->dev;
 
-	if (BOND_MODE(bond) != BOND_MODE_ACTIVEBACKUP)
+	if (BOND_MODE(bond) != BOND_MODE_ACTIVEBACKUP) {
+		err = false;
 		goto out;
+	}
 
-	if (!xs->xso.real_dev)
+	if (!xs->xso.real_dev) {
+		err = false;
 		goto out;
+	}
 
 	if (!real_dev->xfrmdev_ops ||
 	    !real_dev->xfrmdev_ops->xdo_dev_offload_ok ||
-	    netif_is_bond_master(real_dev))
+	    netif_is_bond_master(real_dev)) {
+		err = false;
 		goto out;
+	}
 
-	ok = real_dev->xfrmdev_ops->xdo_dev_offload_ok(skb, xs);
+	err = real_dev->xfrmdev_ops->xdo_dev_offload_ok(skb, xs);
 out:
 	rcu_read_unlock();
-	return ok;
+	return err;
 }
 
 static const struct xfrmdev_ops bond_xfrmdev_ops = {
@@ -1082,10 +1087,13 @@ static struct slave *bond_find_best_slave(struct bonding *bond)
 	return bestslave;
 }
 
-/* must be called in RCU critical section or with RTNL held */
 static bool bond_should_notify_peers(struct bonding *bond)
 {
-	struct slave *slave = rcu_dereference_rtnl(bond->curr_active_slave);
+	struct slave *slave;
+
+	rcu_read_lock();
+	slave = rcu_dereference(bond->curr_active_slave);
+	rcu_read_unlock();
 
 	if (!slave || !bond->send_peer_notif ||
 	    bond->send_peer_notif %
@@ -5191,9 +5199,9 @@ bond_xdp_get_xmit_slave(struct net_device *bond_dev, struct xdp_buff *xdp)
 		break;
 
 	default:
-		if (net_ratelimit())
-			netdev_err(bond_dev, "Unknown bonding mode %d for xdp xmit\n",
-				   BOND_MODE(bond));
+		/* Should never happen. Mode guarded by bond_xdp_check() */
+		netdev_err(bond_dev, "Unknown bonding mode %d for xdp xmit\n", BOND_MODE(bond));
+		WARN_ON_ONCE(1);
 		return NULL;
 	}
 

@@ -1336,7 +1336,7 @@ static bool iocg_kick_delay(struct ioc_gq *iocg, struct ioc_now *now)
 {
 	struct ioc *ioc = iocg->ioc;
 	struct blkcg_gq *blkg = iocg_to_blkg(iocg);
-	u64 tdelta, delay, new_delay, shift;
+	u64 tdelta, delay, new_delay;
 	s64 vover, vover_pct;
 	u32 hwa;
 
@@ -1351,9 +1351,8 @@ static bool iocg_kick_delay(struct ioc_gq *iocg, struct ioc_now *now)
 
 	/* calculate the current delay in effect - 1/2 every second */
 	tdelta = now->now - iocg->delay_at;
-	shift = div64_u64(tdelta, USEC_PER_SEC);
-	if (iocg->delay && shift < BITS_PER_LONG)
-		delay = iocg->delay >> shift;
+	if (iocg->delay)
+		delay = iocg->delay >> div64_u64(tdelta, USEC_PER_SEC);
 	else
 		delay = 0;
 
@@ -2068,7 +2067,7 @@ static void ioc_forgive_debts(struct ioc *ioc, u64 usage_us_sum, int nr_debtors,
 			      struct ioc_now *now)
 {
 	struct ioc_gq *iocg;
-	u64 dur, usage_pct, nr_cycles, nr_cycles_shift;
+	u64 dur, usage_pct, nr_cycles;
 
 	/* if no debtor, reset the cycle */
 	if (!nr_debtors) {
@@ -2130,12 +2129,10 @@ static void ioc_forgive_debts(struct ioc *ioc, u64 usage_us_sum, int nr_debtors,
 		old_debt = iocg->abs_vdebt;
 		old_delay = iocg->delay;
 
-		nr_cycles_shift = min_t(u64, nr_cycles, BITS_PER_LONG - 1);
 		if (iocg->abs_vdebt)
-			iocg->abs_vdebt = iocg->abs_vdebt >> nr_cycles_shift ?: 1;
-
+			iocg->abs_vdebt = iocg->abs_vdebt >> nr_cycles ?: 1;
 		if (iocg->delay)
-			iocg->delay = iocg->delay >> nr_cycles_shift ?: 1;
+			iocg->delay = iocg->delay >> nr_cycles ?: 1;
 
 		iocg_kick_waitq(iocg, true, now);
 

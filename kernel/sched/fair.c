@@ -988,6 +988,16 @@ update_stats_enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 			trace_sched_stat_blocked(tsk, delta);
 
+			/*
+			 * Blocking time is in units of nanosecs, so shift by
+			 * 20 to get a milliseconds-range estimation of the
+			 * amount of time that the task spent sleeping:
+			 */
+			if (unlikely(prof_on == SLEEP_PROFILING)) {
+				profile_hits(SLEEP_PROFILING,
+						(void *)get_wchan(tsk),
+						delta >> 20);
+			}
 			account_scheduler_latency(tsk, delta >> 10, 0);
 		}
 	}
@@ -3111,14 +3121,15 @@ static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 
 }
 
-void reweight_task(struct task_struct *p, const struct load_weight *lw)
+void reweight_task(struct task_struct *p, int prio)
 {
 	struct sched_entity *se = &p->se;
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 	struct load_weight *load = &se->load;
+	unsigned long weight = scale_load(sched_prio_to_weight[prio]);
 
-	reweight_entity(cfs_rq, se, lw->weight);
-	load->inv_weight = lw->inv_weight;
+	reweight_entity(cfs_rq, se, weight);
+	load->inv_weight = sched_prio_to_wmult[prio];
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -5735,41 +5746,21 @@ static inline unsigned long cpu_util(int cpu);
 
 static inline bool cpu_overutilized(int cpu)
 {
-	unsigned long  rq_util_min, rq_util_max;
-
-	if (!sched_energy_enabled())
-		return false;
-
-	rq_util_min = uclamp_rq_get(cpu_rq(cpu), UCLAMP_MIN);
-	rq_util_max = uclamp_rq_get(cpu_rq(cpu), UCLAMP_MAX);
+	unsigned long rq_util_min = uclamp_rq_get(cpu_rq(cpu), UCLAMP_MIN);
+	unsigned long rq_util_max = uclamp_rq_get(cpu_rq(cpu), UCLAMP_MAX);
 
 	return !util_fits_cpu(cpu_util(cpu), rq_util_min, rq_util_max, cpu);
 }
 
-static inline void set_rd_overutilized_status(struct root_domain *rd,
-					      unsigned int status)
+static inline void update_overutilized_status(struct rq *rq)
 {
-	if (!sched_energy_enabled())
-		return;
-
-	WRITE_ONCE(rd->overutilized, status);
-	trace_sched_overutilized_tp(rd, !!status);
-}
-
-static inline void check_update_overutilized_status(struct rq *rq)
-{
-	/*
-	 * overutilized field is used for load balancing decisions only
-	 * if energy aware scheduler is being used
-	 */
-	if (!sched_energy_enabled())
-		return;
-
-	if (!READ_ONCE(rq->rd->overutilized) && cpu_overutilized(rq->cpu))
-		set_rd_overutilized_status(rq->rd, SG_OVERUTILIZED);
+	if (!READ_ONCE(rq->rd->overutilized) && cpu_overutilized(rq->cpu)) {
+		WRITE_ONCE(rq->rd->overutilized, SG_OVERUTILIZED);
+		trace_sched_overutilized_tp(rq->rd, SG_OVERUTILIZED);
+	}
 }
 #else
-static inline void check_update_overutilized_status(struct rq *rq) { }
+static inline void update_overutilized_status(struct rq *rq) { }
 #endif
 
 /* Runqueue only has SCHED_IDLE tasks enqueued */
@@ -5877,7 +5868,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 * and the following generally works well enough in practice.
 	 */
 	if (!task_new)
-		check_update_overutilized_status(rq);
+		update_overutilized_status(rq);
 
 enqueue_throttle:
 	if (cfs_bandwidth_used()) {
@@ -8231,7 +8222,7 @@ static int detach_tasks(struct lb_env *env)
 		case migrate_util:
 			util = task_util_est(p);
 
-			if (shr_bound(util, env->sd->nr_balance_failed) > env->imbalance)
+			if (util > env->imbalance)
 				goto next;
 
 			env->imbalance -= util;
@@ -9586,14 +9577,19 @@ next_group:
 		env->fbq_type = fbq_classify_group(&sds->busiest_stat);
 
 	if (!env->sd->parent) {
+		struct root_domain *rd = env->dst_rq->rd;
+
 		/* update overload indicator if we are at root domain */
-		WRITE_ONCE(env->dst_rq->rd->overload, sg_status & SG_OVERLOAD);
+		WRITE_ONCE(rd->overload, sg_status & SG_OVERLOAD);
 
 		/* Update over-utilization (tipping point, U >= 0) indicator */
-		set_rd_overutilized_status(env->dst_rq->rd,
-					   sg_status & SG_OVERUTILIZED);
+		WRITE_ONCE(rd->overutilized, sg_status & SG_OVERUTILIZED);
+		trace_sched_overutilized_tp(rd, sg_status & SG_OVERUTILIZED);
 	} else if (sg_status & SG_OVERUTILIZED) {
-		set_rd_overutilized_status(env->dst_rq->rd, SG_OVERUTILIZED);
+		struct root_domain *rd = env->dst_rq->rd;
+
+		WRITE_ONCE(rd->overutilized, SG_OVERUTILIZED);
+		trace_sched_overutilized_tp(rd, SG_OVERUTILIZED);
 	}
 
 	update_idle_cpu_scan(env, sum_util);
@@ -11464,7 +11460,7 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 		task_tick_numa(rq, curr);
 
 	update_misfit_status(curr, rq);
-	check_update_overutilized_status(task_rq(curr));
+	update_overutilized_status(task_rq(curr));
 
 	task_tick_core(rq, curr);
 }

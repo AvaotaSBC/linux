@@ -129,7 +129,7 @@ struct va_format {
 #define no_printk(fmt, ...)				\
 ({							\
 	if (0)						\
-		_printk(fmt, ##__VA_ARGS__);		\
+		printk(fmt, ##__VA_ARGS__);		\
 	0;						\
 })
 

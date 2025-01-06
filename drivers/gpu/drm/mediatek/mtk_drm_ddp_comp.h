@@ -145,11 +145,7 @@ unsigned int mtk_ddp_comp_supported_rotations(struct mtk_ddp_comp *comp)
 	if (comp->funcs && comp->funcs->supported_rotations)
 		return comp->funcs->supported_rotations(comp->dev);
 
-	/*
-	 * In order to pass IGT tests, DRM_MODE_ROTATE_0 is required when
-	 * rotation is not supported.
-	 */
-	return DRM_MODE_ROTATE_0;
+	return 0;
 }
 
 static inline unsigned int mtk_ddp_comp_layer_nr(struct mtk_ddp_comp *comp)

@@ -995,8 +995,9 @@ we_slept:
 	 * smp_mb__before_atomic() in dquot_acquire().
 	 */
 	smp_rmb();
-	/* Has somebody invalidated entry under us? */
-	WARN_ON_ONCE(hlist_unhashed(&dquot->dq_hash));
+#ifdef CONFIG_QUOTA_DEBUG
+	BUG_ON(!dquot->dq_sb);	/* Has somebody invalidated entry under us? */
+#endif
 out:
 	if (empty)
 		do_destroy_dquot(empty);

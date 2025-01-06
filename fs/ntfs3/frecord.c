@@ -101,9 +101,7 @@ void ni_clear(struct ntfs_inode *ni)
 {
 	struct rb_node *node;
 
-	if (!ni->vfs_inode.i_nlink && ni->mi.mrec &&
-	    is_rec_inuse(ni->mi.mrec) &&
-	    !(ni->mi.sbi->flags & NTFS_FLAGS_LOG_REPLAYING))
+	if (!ni->vfs_inode.i_nlink && ni->mi.mrec && is_rec_inuse(ni->mi.mrec))
 		ni_delete_all(ni);
 
 	al_destroy(ni);
@@ -752,7 +750,7 @@ static int ni_try_remove_attr_list(struct ntfs_inode *ni)
 	run_deallocate(sbi, &ni->attr_list.run, true);
 	run_close(&ni->attr_list.run);
 	ni->attr_list.size = 0;
-	kvfree(ni->attr_list.le);
+	kfree(ni->attr_list.le);
 	ni->attr_list.le = NULL;
 	ni->attr_list.dirty = false;
 
@@ -901,7 +899,7 @@ int ni_create_attr_list(struct ntfs_inode *ni)
 	goto out;
 
 out1:
-	kvfree(ni->attr_list.le);
+	kfree(ni->attr_list.le);
 	ni->attr_list.le = NULL;
 	ni->attr_list.size = 0;
 	return err;
@@ -1455,7 +1453,7 @@ int ni_insert_nonresident(struct ntfs_inode *ni, enum ATTR_TYPE type,
 
 	if (is_ext) {
 		if (flags & ATTR_FLAG_COMPRESSED)
-			attr->nres.c_unit = NTFS_LZNT_CUNIT;
+			attr->nres.c_unit = COMPRESSION_UNIT;
 		attr->nres.total_size = attr->nres.alloc_size;
 	}
 

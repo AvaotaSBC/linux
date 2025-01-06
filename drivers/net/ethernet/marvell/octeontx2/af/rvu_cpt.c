@@ -17,7 +17,7 @@
 #define	PCI_DEVID_OTX2_CPT10K_PF 0xA0F2
 
 /* Length of initial context fetch in 128 byte words */
-#define CPT_CTX_ILEN    1ULL
+#define CPT_CTX_ILEN    2
 
 #define cpt_get_eng_sts(e_min, e_max, rsp, etype)                   \
 ({                                                                  \
@@ -142,12 +142,8 @@ int rvu_mbox_handler_cpt_lf_alloc(struct rvu *rvu,
 
 		/* Set CPT LF group and priority */
 		val = (u64)req->eng_grpmsk << 48 | 1;
-		if (!is_rvu_otx2(rvu)) {
-			if (req->ctx_ilen_valid)
-				val |= (req->ctx_ilen << 17);
-			else
-				val |= (CPT_CTX_ILEN << 17);
-		}
+		if (!is_rvu_otx2(rvu))
+			val |= (CPT_CTX_ILEN << 17);
 
 		rvu_write64(rvu, blkaddr, CPT_AF_LFX_CTL(cptlf), val);
 
@@ -264,8 +260,7 @@ int rvu_mbox_handler_cpt_rd_wr_register(struct rvu *rvu,
 					struct cpt_rd_wr_reg_msg *req,
 					struct cpt_rd_wr_reg_msg *rsp)
 {
-	u64 offset = req->reg_offset;
-	int blkaddr, lf;
+	int blkaddr;
 
 	blkaddr = validate_and_get_cpt_blkaddr(req->blkaddr);
 	if (blkaddr < 0)
@@ -276,25 +271,17 @@ int rvu_mbox_handler_cpt_rd_wr_register(struct rvu *rvu,
 	    !is_cpt_vf(rvu, req->hdr.pcifunc))
 		return CPT_AF_ERR_ACCESS_DENIED;
 
-	if (!is_valid_offset(rvu, req))
-		return CPT_AF_ERR_ACCESS_DENIED;
-
-	/* Translate local LF used by VFs to global CPT LF */
-	lf = rvu_get_lf(rvu, &rvu->hw->block[blkaddr], req->hdr.pcifunc,
-			(offset & 0xFFF) >> 3);
-
-	/* Translate local LF's offset to global CPT LF's offset */
-	offset &= 0xFF000;
-	offset += lf << 3;
-
-	rsp->reg_offset = offset;
+	rsp->reg_offset = req->reg_offset;
 	rsp->ret_val = req->ret_val;
 	rsp->is_write = req->is_write;
 
+	if (!is_valid_offset(rvu, req))
+		return CPT_AF_ERR_ACCESS_DENIED;
+
 	if (req->is_write)
-		rvu_write64(rvu, blkaddr, offset, req->val);
+		rvu_write64(rvu, blkaddr, req->reg_offset, req->val);
 	else
-		rsp->val = rvu_read64(rvu, blkaddr, offset);
+		rsp->val = rvu_read64(rvu, blkaddr, req->reg_offset);
 
 	return 0;
 }

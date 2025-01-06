@@ -85,7 +85,6 @@
 #endif
 
 extern u64 xfeatures_mask_all;
-extern u64 xfeatures_mask_indep;
 
 static inline u64 xfeatures_mask_supervisor(void)
 {
@@ -125,9 +124,9 @@ static inline u64 xfeatures_mask_fpstate(void)
 static inline u64 xfeatures_mask_independent(void)
 {
 	if (!boot_cpu_has(X86_FEATURE_ARCH_LBR))
-		return xfeatures_mask_indep & ~XFEATURE_MASK_LBR;
+		return XFEATURE_MASK_INDEPENDENT & ~XFEATURE_MASK_LBR;
 
-	return xfeatures_mask_indep;
+	return XFEATURE_MASK_INDEPENDENT;
 }
 
 extern u64 xstate_fx_sw_bytes[USER_XSTATE_FX_SW_WORDS];

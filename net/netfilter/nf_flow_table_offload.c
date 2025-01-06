@@ -830,8 +830,8 @@ static int nf_flow_offload_tuple(struct nf_flowtable *flowtable,
 				 struct list_head *block_cb_list)
 {
 	struct flow_cls_offload cls_flow = {};
-	struct netlink_ext_ack extack = {};
 	struct flow_block_cb *block_cb;
+	struct netlink_ext_ack extack;
 	__be16 proto = ETH_P_ALL;
 	int err, i = 0;
 
@@ -953,22 +953,17 @@ static void flow_offload_work_stats(struct flow_offload_work *offload)
 static void flow_offload_work_handler(struct work_struct *work)
 {
 	struct flow_offload_work *offload;
-	struct net *net;
 
 	offload = container_of(work, struct flow_offload_work, work);
-	net = read_pnet(&offload->flowtable->net);
 	switch (offload->cmd) {
 		case FLOW_CLS_REPLACE:
 			flow_offload_work_add(offload);
-			NF_FLOW_TABLE_STAT_DEC_ATOMIC(net, count_wq_add);
 			break;
 		case FLOW_CLS_DESTROY:
 			flow_offload_work_del(offload);
-			NF_FLOW_TABLE_STAT_DEC_ATOMIC(net, count_wq_del);
 			break;
 		case FLOW_CLS_STATS:
 			flow_offload_work_stats(offload);
-			NF_FLOW_TABLE_STAT_DEC_ATOMIC(net, count_wq_stats);
 			break;
 		default:
 			WARN_ON_ONCE(1);
@@ -980,18 +975,12 @@ static void flow_offload_work_handler(struct work_struct *work)
 
 static void flow_offload_queue_work(struct flow_offload_work *offload)
 {
-	struct net *net = read_pnet(&offload->flowtable->net);
-
-	if (offload->cmd == FLOW_CLS_REPLACE) {
-		NF_FLOW_TABLE_STAT_INC(net, count_wq_add);
+	if (offload->cmd == FLOW_CLS_REPLACE)
 		queue_work(nf_flow_offload_add_wq, &offload->work);
-	} else if (offload->cmd == FLOW_CLS_DESTROY) {
-		NF_FLOW_TABLE_STAT_INC(net, count_wq_del);
+	else if (offload->cmd == FLOW_CLS_DESTROY)
 		queue_work(nf_flow_offload_del_wq, &offload->work);
-	} else {
-		NF_FLOW_TABLE_STAT_INC(net, count_wq_stats);
+	else
 		queue_work(nf_flow_offload_stats_wq, &offload->work);
-	}
 }
 
 static struct flow_offload_work *

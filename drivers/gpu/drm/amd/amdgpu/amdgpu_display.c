@@ -842,7 +842,8 @@ static int check_tiling_flags_gfx6(struct amdgpu_framebuffer *afb)
 {
 	u64 micro_tile_mode;
 
-	if (AMDGPU_TILING_GET(afb->tiling_flags, ARRAY_MODE) == 1) /* LINEAR_ALIGNED */
+	/* Zero swizzle mode means linear */
+	if (AMDGPU_TILING_GET(afb->tiling_flags, SWIZZLE_MODE) == 0)
 		return 0;
 
 	micro_tile_mode = AMDGPU_TILING_GET(afb->tiling_flags, MICRO_TILE_MODE);
