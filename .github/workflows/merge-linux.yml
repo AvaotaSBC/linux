@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       KERNEL_URL: https://cdn.kernel.org/pub/linux/kernel/v5.x/
-      KERNEL_VERSION: linux-5.15.173
+      KERNEL_VERSION: linux-5.15.154
       KERNEL_BRANCH: linux-5.15
     steps:
     - uses: actions/checkout@v3

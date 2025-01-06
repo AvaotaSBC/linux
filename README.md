@@ -5,7 +5,7 @@ Kernel source tree for AvaotaSBC-provided kernel builds.
 ## Kernel Branches
 | Kernel Source                                                | Kernel Type            | Kernel Source                                                | Kernel Version        |
 | ------------------------------------------------------------ | ---------------------- | ------------------------------------------------------------ | --------------------- |
-| [Linux 5.15 LTS](https://github.com/AvaotaSBC/linux/tree/linux-5.15) | Linux LTS Kernel       | https://cdn.kernel.org/pub/linux/kernel/v5.x/                | linux-5.15.173        |
+| [Linux 5.15 LTS](https://github.com/AvaotaSBC/linux/tree/linux-5.15) | Linux LTS Kernel       | https://cdn.kernel.org/pub/linux/kernel/v5.x/                | linux-5.15.154        |
 
 ## AutoCI Branch Update
 
