@@ -27,8 +27,16 @@
 #define CLK_DSI_LS		1
 #define CLK_DSI_HS		2
 #define CLK_LVDS_OR_RGB		3
+
+#if IS_ENABLED(CONFIG_ARCH_SUN60IW2)
+#define DCXO "dcxo"
+#else
+#define DCXO "dcxo24M"
+#endif
 struct dsi_combophy_data {
 	unsigned int id;
+	unsigned int lvl;
+	struct combophy_config phy_config[2];
 };
 struct sunxi_dsi_combophy {
 	uintptr_t reg_base;
@@ -73,18 +81,7 @@ static long sunxi_displl_clk_round_rate(struct clk_hw *hw,
 				     unsigned long rate,
 				     unsigned long *prate)
 {
-/*
-	struct ccu_nm *nm = hw_to_ccu_nm(hw);
-	unsigned long rate_tmp;
-	unsigned int m;
 
-	rate_tmp = rate;
-
-	for (m = 0; rate_tmp < nm->min_rate; ++m)
-		rate_tmp = rate * m;
-
-	prate = &rate_tmp;
-*/
 	return rate;
 }
 
@@ -101,19 +98,24 @@ static int sunxi_displl_clk_set_rate(struct clk_hw *hw, unsigned long drate,
 		for (m = 0; prate_tmp < nm->min_rate; ++m)
 			prate_tmp = drate * m;
 
-		n = DIV_ROUND_CLOSEST(prate_tmp, 24000000);
+		n = DIV_ROUND_CLOSEST(prate_tmp, prate);
 		div.n = n;
 		div.m0 = 0;
 		div.m1 = m - 1;
 		div.m2 = 0;
 		div.m3 = m - 1;
 	} else {
-		prate_tmp = get_displl_vco(&nm->common.dphy_lcd);
+		prate_tmp = get_displl_vco(&nm->common.dphy_lcd, prate);
 		m = DIV_ROUND_CLOSEST(prate_tmp, drate);
 		div.n = 0;
 		div.m0 = 0;
 		div.m1 = 0;
-		div.m2 = 3;
+		if (!(m % 3))
+			div.m2 = 3;
+		else if (!(m % 2))
+			div.m2 = 2;
+		else
+			div.m2 = 1;
 		div.m3 = m / div.m2;
 	}
 	displl_clk_set(&nm->common.dphy_lcd, &div);
@@ -129,22 +131,33 @@ static unsigned long sunxi_displl_clk_recalc_rate(struct clk_hw *hw,
 
 	displl_clk_get(&nm->common.dphy_lcd, &div);
 	if (nm->m01)
-		rate = 24000000 * div.n / (div.p + 1) / ((div.m0 + 1) * (div.m1 + 1));
-	if (nm->m23)
-		rate = 24000000 * div.n / (div.p + 1) / ((div.m2 + 1) * (div.m3 + 1));
+		rate = parent_rate * div.n / (div.p + 1) / ((div.m0 + 1) * (div.m1 + 1));
+	else if (nm->m23)
+		rate = parent_rate * div.n / (div.p + 1) / ((div.m2 + 1) * (div.m3 + 1));
+	else
+		rate = parent_rate;
 
 	return rate;
 }
 static int sunxi_displl_clk_enable(struct clk_hw *hw)
 {
+#ifndef DISPLL_LINEAR_FREQ
 	struct ccu_nm *nm = hw_to_ccu_nm(hw);
 
 	displl_clk_enable(&nm->common.dphy_lcd);
-
+#endif
 	return 0;
+}
+
+static void sunxi_displl_clk_disable(struct clk_hw *hw)
+{
+	struct ccu_nm *nm = hw_to_ccu_nm(hw);
+
+	displl_clk_disable(&nm->common.dphy_lcd);
 }
 const struct clk_ops sunxi_displl_clk_ops = {
 	.enable		= sunxi_displl_clk_enable,
+	.disable	= sunxi_displl_clk_disable,
 	.recalc_rate	= sunxi_displl_clk_recalc_rate,
 	.round_rate	= sunxi_displl_clk_round_rate,
 	.set_rate	= sunxi_displl_clk_set_rate,
@@ -155,7 +168,7 @@ static struct ccu_nm pll_displl_clk = {
 	.min_rate       = 1260000000,
 	.max_rate       = 2520000000,
 	.common         = {
-		.hw.init	= CLK_HW_INIT("displl", "dcxo24M",
+		.hw.init	= CLK_HW_INIT("displl", DCXO,
 					&sunxi_displl_clk_ops,
 					CLK_SET_RATE_UNGATE | CLK_IGNORE_UNUSED),
 	},
@@ -221,7 +234,7 @@ static struct ccu_nm pll_displl_clk1 = {
 	.min_rate       = 1260000000,
 	.max_rate       = 2520000000,
 	.common         = {
-		.hw.init	= CLK_HW_INIT("displl1", "dcxo24M",
+		.hw.init	= CLK_HW_INIT("displl1", DCXO,
 					&sunxi_displl_clk_ops,
 					CLK_SET_RATE_UNGATE | CLK_IGNORE_UNUSED),
 	},
@@ -379,7 +392,6 @@ static int sunxi_dsi_combophy_configure(struct phy *phy, union phy_configure_opt
 	return 0;
 }
 
-
 static const struct phy_ops sunxi_dsi_combophy_ops = {
 	.power_on = sunxi_dsi_combophy_power_on,
 	.power_off = sunxi_dsi_combophy_power_off,
@@ -416,7 +428,6 @@ static int sunxi_displl_probe(struct device_node *node, struct sunxi_dsi_comboph
 		struct clk_hw *hw = cphy->hw_clks->hws[i];
 		struct ccu_common *cclk = cphy->ccu_clks[i];
 		const char *name;
-
 		if (!hw)
 			continue;
 		name = hw->init->name;
@@ -479,6 +490,7 @@ static int sunxi_dsi_combophy_probe(struct platform_device *pdev)
 
 	cphy->id = cphy_data->id;
 	cphy->dphy_lcd.dphy_index = cphy->id;
+	cphy->dphy_lcd.phy_config = (struct combophy_config *)&cphy_data->phy_config[0];
 	sunxi_dsi_combo_phy_set_reg_base(&cphy->dphy_lcd, cphy->reg_base);
 
 	sunxi_displl_probe(pdev->dev.of_node, cphy);
@@ -498,15 +510,377 @@ static int sunxi_dsi_combophy_probe(struct platform_device *pdev)
 
 static const struct dsi_combophy_data phy0_data = {
 	.id = 0,
+	.phy_config[0] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 4,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 0,
+				.reg_preemph2 = 0,
+				.reg_preemph1 = 0,
+				.reg_preemph0 = 0,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0x18,
+				.en_soft_rcal = 1,
+				.on_rescal = 0,
+				.en_rescal = 0,
+				.reg_vlv_set = 5,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 6,
+				.reg_vres_set = 3,
+				.reg_vref_source = 0,
+				.reg_ib = 4,
+				.reg_comtest = 0,
+				.en_comtest = 0,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x43,
+		},
+	},
+	.phy_config[1] = {},
 };
 
 static const struct dsi_combophy_data phy1_data = {
 	.id = 1,
+	.phy_config[0] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 4,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 0,
+				.reg_preemph2 = 0,
+				.reg_preemph1 = 0,
+				.reg_preemph0 = 0,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0x18,
+				.en_soft_rcal = 1,
+				.on_rescal = 0,
+				.en_rescal = 0,
+				.reg_vlv_set = 5,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 6,
+				.reg_vres_set = 3,
+				.reg_vref_source = 0,
+				.reg_ib = 4,
+				.reg_comtest = 0,
+				.en_comtest = 0,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x43,
+		},
+	},
+	.phy_config[1] = {},
+};
+
+static const struct dsi_combophy_data sun55iw6_data0 = {
+	.id = 0,
+	.phy_config[0] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 4,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 0,
+				.reg_preemph2 = 0,
+				.reg_preemph1 = 0,
+				.reg_preemph0 = 0,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0x18,
+				.en_soft_rcal = 1,
+				.on_rescal = 0,
+				.en_rescal = 0,
+				.reg_vlv_set = 5,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 6,
+				.reg_vres_set = 3,
+				.reg_vref_source = 0,
+				.reg_ib = 4,
+				.reg_comtest = 0,
+				.en_comtest = 0,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x53,
+		},
+	},
+	.phy_config[1] = {},
+};
+
+static const struct dsi_combophy_data sun60iw2_data0 = {
+	.id = 0,
+	.phy_config[0] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 9,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 7,
+				.reg_preemph2 = 7,
+				.reg_preemph1 = 7,
+				.reg_preemph0 = 7,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0x1f,
+				.en_soft_rcal = 1,
+				.on_rescal = 1,
+				.en_rescal = 0,
+				.reg_vlv_set = 2,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 4,
+				.reg_vres_set = 3,
+				.reg_vref_source = 1,
+				.reg_ib = 4,
+				.reg_comtest = 2,
+				.en_comtest = 1,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x63,
+		},
+	},
+	.phy_config[1] = {},
+};
+
+static const struct dsi_combophy_data sun60iw2_data1 = {
+	.id = 1,
+	.phy_config[0] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 9,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 7,
+				.reg_preemph2 = 7,
+				.reg_preemph1 = 7,
+				.reg_preemph0 = 7,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0x1f,
+				.en_soft_rcal = 1,
+				.on_rescal = 1,
+				.en_rescal = 0,
+				.reg_vlv_set = 2,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 4,
+				.reg_vres_set = 3,
+				.reg_vref_source = 1,
+				.reg_ib = 4,
+				.reg_comtest = 2,
+				.en_comtest = 1,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x63,
+		},
+	},
+	.phy_config[1] = {},
+};
+
+static const struct dsi_combophy_data sun65iw1_data0 = {
+	.id = 0,
+	.phy_config[0] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 8,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 0,
+				.reg_preemph2 = 0,
+				.reg_preemph1 = 0,
+				.reg_preemph0 = 0,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0,
+				.reg_vlv_set = 4,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 3,
+				.reg_vres_set = 3,
+				.reg_vref_source = 0,
+				.reg_ib = 4,
+				.reg_comtest = 0,
+				.en_comtest = 0,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x53,
+		},
+	},
+	.phy_config[1] = {
+		.dphy_tx_time0 = {
+			.bits = {
+				.hs_trail_set = 0x0a,
+				.hs_pre_set = 6,
+				.lpx_tm_set = 0x0e,
+			},
+		},
+		.dphy_ana0 = {
+			.bits = {
+				.reg_lptx_setr = 7,
+				.reg_lptx_setc = 7,
+				.reg_preemph3 = 0,
+				.reg_preemph2 = 0,
+				.reg_preemph1 = 0,
+				.reg_preemph0 = 0,
+			},
+		},
+		.dphy_ana4 = {
+			.bits = {
+				.reg_soft_rcal = 0,
+				.reg_vlv_set = 4,
+				.reg_vlptx_set = 3,
+				.reg_vtt_set = 2,
+				.reg_vres_set = 3,
+				.reg_vref_source = 0,
+				.reg_ib = 4,
+				.reg_comtest = 0,
+				.en_comtest = 0,
+				.en_mipi = 1,
+			},
+		},
+		.combo_phy_reg0 = {
+			.bits = {
+				.en_cp = 1,
+				.en_comboldo = 1,
+				.en_lvds = 0,
+				.en_mipi = 1,
+				.en_test_0p8 = 0,
+				.en_test_comboldo = 0,
+			},
+		},
+		.combo_phy_reg1 = {
+			.dwval = 0x53,
+		},
+	},
 };
 
 static const struct of_device_id sunxi_dsi_combophy_of_table[] = {
 	{ .compatible = "allwinner,sunxi-dsi-combo-phy0", .data = &phy0_data },
 	{ .compatible = "allwinner,sunxi-dsi-combo-phy1", .data = &phy1_data },
+	{ .compatible = "allwinner,sunxi-dsi-combo-phy0,sun55iw6", .data = &sun55iw6_data0 },
+	{ .compatible = "allwinner,sunxi-dsi-combo-phy0,sun60iw2", .data = &sun60iw2_data0 },
+	{ .compatible = "allwinner,sunxi-dsi-combo-phy1,sun60iw2", .data = &sun60iw2_data1 },
+	{ .compatible = "allwinner,sunxi-dsi-combo-phy0,sun65iw1", .data = &sun65iw1_data0 },
 	{}
 };
 MODULE_DEVICE_TABLE(of, sunxi_dsi_combophy_of_table);

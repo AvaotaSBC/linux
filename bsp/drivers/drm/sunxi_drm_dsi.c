@@ -10,6 +10,7 @@
  * License version 2.  This program is licensed "as is" without any
  * warranty of any kind, whether express or implied.
  */
+#include <drm/drm_modes.h>
 #include <linux/component.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/machine.h>
@@ -29,21 +30,31 @@
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_property.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+#include <drm/display/drm_dsc_helper.h>
+#else
+#include <drm/drm_dsc.h>
+#endif
 #include "sunxi_drm_drv.h"
 #include "sunxi_device/sunxi_tcon.h"
 #include "sunxi_drm_intf.h"
 #include "sunxi_drm_crtc.h"
 #include "panel/panels.h"
+#include <video/sunxi_drm_notify.h>
 #define PHY_SINGLE_ENABLE 1
 #define PHY_DUAL_ENABLE 2
-#define MIPI_DSI_TO_INCELL (1<<23)
-#define INCELL_SUSPEND_FLAG 9
-#define INCELL_RESUME_FLAG 10
-#if IS_ENABLED(CONFIG_ARCH_SUN55IW6) || IS_ENABLED(CONFIG_ARCH_SUN55IW3)
+#define MIPI_DSI_SYNC_INCELL	BIT(25)
+#define MIPI_DSI_ASYNC_INCELL	BIT(26)
+
+#if IS_ENABLED(CONFIG_ARCH_SUN55IW6) || IS_ENABLED(CONFIG_ARCH_SUN55IW3) \
+	|| IS_ENABLED(CONFIG_ARCH_SUN60IW2) || IS_ENABLED(CONFIG_ARCH_SUN65IW1)
 #define DSI_DISPLL_CLK
 #endif
+
 #if IS_ENABLED (CONFIG_DRM_FBDEV_EMULATION)
-void dsi_notify_call_chain(int cmd);
+void dsi_notify_call_chain(int cmd, int flag);
+#else
+void sunxi_disp_notify_call_chain(int cmd, int flag);
 #endif
 struct dsi_data {
 	int id;
@@ -63,8 +74,9 @@ struct sunxi_drm_dsi {
 	union phy_configure_opts phy_opts;
 	struct sunxi_dsi_lcd dsi_lcd;
 	uintptr_t reg_base;
+	uintptr_t dsc_base;
 	const struct dsi_data *dsi_data;
-
+	struct drm_dsc_config *dsc;
 	u32 enable;
 	irq_handler_t irq_handler;
 	void *irq_data;
@@ -76,7 +88,11 @@ struct sunxi_drm_dsi {
 	struct clk *clk_bus;
 	struct clk *clk;
 	struct clk *combphy;
+	struct clk *dsc_gating_clk;
+	struct reset_control *dsc_rst_clk;
 	struct reset_control *rst_bus;
+	unsigned long hs_clk_rate;
+	unsigned long ls_clk_rate;
 };
 static const struct dsi_data dsi0_data = {
 	.id = 0,
@@ -94,16 +110,6 @@ static const struct of_device_id sunxi_drm_dsi_match[] = {
 
 static void sunxi_dsi_enable_vblank(bool enable, void *data);
 
-/*
-static struct sunxi_drm_dsi *dev_to_sunxi_drm_dsi(struct device *dev)
-{
-	if (PTR_ERR_OR_ZERO(dev) || !of_match_node(sunxi_drm_dsi_match, dev->of_node)) {
-		DRM_ERROR("use not dsi device for a dsi api!\n");
-		return ERR_PTR(-EINVAL);
-	}
-	return dev_get_drvdata(dev);
-}
-*/
 static struct device *drm_dsi_of_get_tcon(struct device *dsi_dev)
 {
 	struct device_node *node = dsi_dev->of_node;
@@ -188,12 +194,11 @@ static int sunxi_drm_dsi_find_slave(struct sunxi_drm_dsi *dsi)
 	return 0;
 }
 
-static int sunxi_dsi_clk_config_enable(struct sunxi_drm_dsi *dsi,
-					const struct disp_dsi_para *para)
+static int sunxi_dsi_clk_config_enable(struct sunxi_drm_dsi *dsi)
 {
 	int ret = 0;
 	unsigned long dsi_rate = 0;
-	unsigned long combphy_rate, combphy_rate_set;
+	unsigned long combphy_rate = 0;
 	unsigned long dsi_rate_set = 150000000;
 
 	clk_set_rate(dsi->clk, dsi_rate_set);
@@ -203,14 +208,10 @@ static int sunxi_dsi_clk_config_enable(struct sunxi_drm_dsi *dsi,
 			dsi_rate, dsi_rate_set);
 
 	if (dsi->combphy) {
-		if (dsi->slave || dsi->master)
-			combphy_rate_set = dsi->dsi_para.timings.pixel_clk * 3;
-		else
-			combphy_rate_set = dsi->dsi_para.timings.pixel_clk * 6;
-		clk_set_rate(dsi->combphy, combphy_rate_set);
+		clk_set_rate(dsi->combphy, dsi->hs_clk_rate);
 		combphy_rate = clk_get_rate(dsi->combphy);
 		DRM_INFO("combphy rate to be set:%lu, real clk rate:%lu\n",
-				combphy_rate, combphy_rate_set);
+				dsi->hs_clk_rate, combphy_rate);
 		ret = clk_prepare_enable(dsi->combphy);
 		if (ret) {
 			DRM_ERROR("clk_prepare_enable for combphy_clk failed\n");
@@ -234,6 +235,20 @@ static int sunxi_dsi_clk_config_enable(struct sunxi_drm_dsi *dsi,
 		return ret;
 	}
 
+	if (dsi->dsc) {
+		ret = reset_control_deassert(dsi->dsc_rst_clk);
+		if (ret) {
+			DRM_ERROR("reset_control_deassert for rst_bus_dsc failed\n");
+			return ret;
+		}
+
+		ret = clk_prepare_enable(dsi->dsc_gating_clk);
+		if (ret) {
+			DRM_ERROR("clk_prepare_enable for clk_bus_dsc failed\n");
+			return ret;
+		}
+	}
+
 	return ret;
 }
 
@@ -241,17 +256,24 @@ static int sunxi_dsi_clk_config_disable(struct sunxi_drm_dsi *dsi)
 {
 	int ret = 0;
 
+	/* Since the registers were not saved, changes are made here to update the registers when enabled next time. */
 	clk_disable_unprepare(dsi->clk_bus);
 	clk_disable_unprepare(dsi->clk);
 	if (dsi->combphy)
 		clk_disable_unprepare(dsi->combphy);
-	if (dsi->displl_ls)
-		clk_disable_unprepare(dsi->displl_ls);
-
 	ret = reset_control_assert(dsi->rst_bus);
 	if (ret) {
 		DRM_ERROR("reset_control_assert for rst_bus_mipi_dsi failed\n");
 		return ret;
+	}
+	if (dsi->dsc) {
+		ret = reset_control_assert(dsi->dsc_rst_clk);
+		if (ret) {
+			DRM_ERROR("reset_control_assert for rst_bus_dsc failed\n");
+			return ret;
+		}
+
+		clk_disable_unprepare(dsi->dsc_gating_clk);
 	}
 	return ret;
 }
@@ -259,7 +281,13 @@ static int sunxi_dsi_clk_config_disable(struct sunxi_drm_dsi *dsi)
 static irqreturn_t sunxi_dsi_irq_event_proc(int irq, void *parg)
 {
 	struct sunxi_drm_dsi *dsi = parg;
+	struct disp_video_timings *timings = &dsi->dsi_para.timings;
 
+	if (dsi_irq_query(&dsi->dsi_lcd, DSI_IRQ_VIDEO_LINE)) {
+		sunxi_dsi_vrr_irq(&dsi->dsi_lcd, timings, false);
+
+		return IRQ_HANDLED;
+	}
 	dsi_irq_query(&dsi->dsi_lcd, DSI_IRQ_VIDEO_VBLK);
 
 	return dsi->irq_handler(irq, dsi->irq_data);
@@ -298,6 +326,27 @@ static int sunxi_lcd_pin_set_state(struct device *dev, char *name)
 exit:
 	return ret;
 }
+static int sunxi_dsi_displl_enable(struct sunxi_drm_dsi *dsi)
+{
+	if (dsi->displl_hs)
+		clk_set_rate(dsi->displl_hs, dsi->hs_clk_rate);
+	if (dsi->displl_ls)
+		clk_set_rate(dsi->displl_ls, dsi->ls_clk_rate);
+	if (dsi->displl_ls)
+		clk_prepare_enable(dsi->displl_ls);
+	return 0;
+}
+
+static int sunxi_dsi_displl_disable(struct sunxi_drm_dsi *dsi)
+{
+	if (dsi->displl_hs)
+		clk_set_rate(dsi->displl_hs, 48000000);
+	if (dsi->displl_ls)
+		clk_set_rate(dsi->displl_ls, 24000000);
+	if (dsi->displl_ls)
+		clk_disable_unprepare(dsi->displl_ls);
+	return 0;
+}
 
 static int sunxi_dsi_enable_output(struct sunxi_drm_dsi *dsi)
 {
@@ -321,27 +370,104 @@ static int sunxi_dsi_disable_output(struct sunxi_drm_dsi *dsi)
 	return 0;
 }
 
+static int dsi_populate_dsc_params(struct sunxi_drm_dsi *dsi, struct drm_dsc_config *dsc)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	int ret;
+#endif
+
+	if (dsc->bits_per_pixel & 0xf) {
+		DRM_ERROR("DSI does not support fractional bits_per_pixel\n");
+		return -EINVAL;
+	}
+
+	if (dsc->bits_per_component != 8) {
+		DRM_ERROR("DSI does not support bits_per_component != 8 yet\n");
+		return -EOPNOTSUPP;
+	}
+
+	dsc->simple_422 = 0;
+	dsc->convert_rgb = 1;
+	dsc->vbr_enable = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	drm_dsc_set_const_params(dsc);
+	drm_dsc_set_rc_buf_thresh(dsc);
+
+	/* handle only bpp = bpc = 8, pre-SCR panels */
+	ret = drm_dsc_setup_rc_params(dsc, DRM_DSC_1_1_PRE_SCR);
+	if (ret) {
+		DRM_ERROR("could not find DSC RC parameters\n");
+		return ret;
+	}
+
+	dsc->initial_scale_value = drm_dsc_initial_scale_value(dsc);
+/*
+#else
+	before Linux-6.1, you need to implement it yourself
+*/
+#endif
+	dsc->line_buf_depth = dsc->bits_per_component + 1;
+
+	return drm_dsc_compute_rc_parameters(dsc);
+}
+
+static void dsi_timing_setup(struct sunxi_drm_dsi *dsi, struct disp_video_timings *timing)
+{
+	int ret;
+	struct drm_dsc_config *dsc = dsi->dsc;
+
+	dsc->pic_width = timing->x_res;
+	dsc->pic_height = timing->y_res;
+
+	ret = dsi_populate_dsc_params(dsi, dsc);
+	if (ret)
+		DRM_ERROR("One or more PPS parameters exceeded their allowed bit depth.");
+}
+
+static int sunxi_drm_dsi_set_vfp(struct device *dev)
+{
+	struct sunxi_drm_dsi *dsi = dev_get_drvdata(dev);
+	struct disp_video_timings *timings = &dsi->dsi_para.timings;
+	u32 dsi_line;
+
+	dsi_line = sunxi_dsi_updata_vt(&dsi->dsi_lcd, timings, dsi->dsi_para.vrr_setp);
+
+	return dsi_line;
+
+}
+
+static int sunxi_drm_dsi_get_line(struct device *dev)
+{
+	struct sunxi_drm_dsi *dsi = dev_get_drvdata(dev);
+	u32 dsi_line;
+
+	dsi_line = dsi_get_real_cur_line(&dsi->dsi_lcd);
+
+	return dsi_line;
+
+}
+
 void sunxi_drm_dsi_encoder_atomic_enable(struct drm_encoder *encoder,
 					struct drm_atomic_state *state)
 {
-	int ret, bpp;
+	int ret, bpp, lcd_div;
 	struct drm_crtc *crtc = encoder->crtc;
 	int de_hw_id = sunxi_drm_crtc_get_hw_id(crtc);
 	struct drm_crtc_state *crtc_state = crtc->state;
 	struct sunxi_drm_dsi *dsi = encoder_to_sunxi_drm_dsi(encoder);
 	struct sunxi_crtc_state *scrtc_state = to_sunxi_crtc_state(crtc_state);
 	struct disp_output_config disp_cfg;
-	unsigned long hs_clk_rate, ls_clk_rate;
 
-	DRM_INFO("[DSI] %s start\n", __FUNCTION__);
-	dsi->enable = true;
-	bpp = mipi_dsi_pixel_format_to_bpp(dsi->dsi_para.format);
 	drm_mode_to_sunxi_video_timings(&dsi->mode, &dsi->dsi_para.timings);
+	bpp = mipi_dsi_pixel_format_to_bpp(dsi->dsi_para.format);
 
-	if (dsi->phy) {
-		phy_mipi_dphy_get_default_config(dsi->dsi_para.timings.pixel_clk,
-					bpp, dsi->dsi_para.lanes, &dsi->phy_opts.mipi_dphy);
-	}
+	if (dsi->slave)
+		lcd_div = bpp / (dsi->dsi_para.lanes * 2);
+	else if (dsi->dsc)
+		lcd_div = dsi->dsc->bits_per_component / dsi->dsi_para.lanes;
+	else
+		lcd_div = bpp / dsi->dsi_para.lanes;
 
 	memset(&disp_cfg, 0, sizeof(struct disp_output_config));
 	memcpy(&disp_cfg.dsi_para, &dsi->dsi_para,
@@ -351,18 +477,35 @@ void sunxi_drm_dsi_encoder_atomic_enable(struct drm_encoder *encoder,
 	disp_cfg.irq_handler = sunxi_crtc_event_proc;
 	disp_cfg.irq_data = scrtc_state->base.crtc;
 	disp_cfg.sw_enable = dsi->sw_enable;
+	disp_cfg.dev = dsi->dev;
 #ifdef DSI_DISPLL_CLK
 	disp_cfg.displl_clk = true;
 	disp_cfg.tcon_lcd_div = 1;
 #else
 	disp_cfg.displl_clk = false;
-	if (dsi->slave)
-		disp_cfg.tcon_lcd_div = 3;
-	else
-		disp_cfg.tcon_lcd_div = 6;
+	disp_cfg.tcon_lcd_div = lcd_div;
 #endif
 	if (dsi->slave || (dsi->dsi_para.mode_flags & MIPI_DSI_SLAVE_MODE))
 		disp_cfg.slave_dsi = true;
+
+	disp_cfg.set_dsi_vfp = sunxi_drm_dsi_set_vfp;
+	disp_cfg.get_dsi_line = sunxi_drm_dsi_get_line;
+	if (dsi->enable) {
+		disp_cfg.set_dsi_vfp = sunxi_drm_dsi_set_vfp;
+		if (disp_cfg.slave_dsi)
+			sunxi_tcon_vrr_set(dsi->sdrm.tcon_dev, &disp_cfg);
+		else
+			sunxi_dsi_vrr_irq(&dsi->dsi_lcd, &dsi->dsi_para.timings, true);
+		DRM_DEBUG_KMS("[DSI-VRR] set mode: " DRM_MODE_FMT "\n", DRM_MODE_ARG(&dsi->mode));
+		return;
+	}
+	DRM_INFO("[DSI] %s vrr_setp:%d start\n", __FUNCTION__, dsi->dsi_para.vrr_setp);
+	dsi->enable = true;
+
+	if (dsi->phy) {
+		phy_mipi_dphy_get_default_config(dsi->dsi_para.timings.pixel_clk,
+					bpp, dsi->dsi_para.lanes, &dsi->phy_opts.mipi_dphy);
+	}
 
 	sunxi_tcon_mode_init(dsi->sdrm.tcon_dev, &disp_cfg);
 
@@ -377,34 +520,21 @@ void sunxi_drm_dsi_encoder_atomic_enable(struct drm_encoder *encoder,
 		}
 	}
 
-	ret = sunxi_dsi_clk_config_enable(dsi, &dsi->dsi_para);
+	dsi->ls_clk_rate = dsi->dsi_para.timings.pixel_clk;
+	dsi->hs_clk_rate = dsi->dsi_para.timings.pixel_clk * lcd_div;
+	ret = sunxi_dsi_clk_config_enable(dsi);
 	if (ret) {
 		DRM_ERROR("dsi clk enable failed\n");
 		return;
 	}
-	ls_clk_rate = dsi->dsi_para.timings.pixel_clk;
-	hs_clk_rate = dsi->dsi_para.timings.pixel_clk * bpp / dsi->dsi_para.lanes;
 	if (dsi->slave) {
-		hs_clk_rate = dsi->dsi_para.timings.pixel_clk * bpp / (dsi->dsi_para.lanes * 2);
-		ret = sunxi_dsi_clk_config_enable(dsi->slave, &dsi->dsi_para);
+		ret = sunxi_dsi_clk_config_enable(dsi->slave);
 		if (ret) {
 			DRM_ERROR("slave clk enable failed\n");
 			return;
 		}
 	}
 
-	ret = dsi_cfg(&dsi->dsi_lcd, &dsi->dsi_para);
-	if (ret) {
-		DRM_ERROR("dsi_cfg failed\n");
-		return;
-	}
-	if (dsi->slave) {
-		ret = dsi_cfg(&dsi->slave->dsi_lcd, &dsi->dsi_para);
-		if (ret) {
-			DRM_ERROR("dsi_cfg slave failed\n");
-			return;
-		}
-	}
 	sunxi_lcd_pin_set_state(dsi->dev, "active");
 	if (dsi->slave) {
 		sunxi_lcd_pin_set_state(dsi->slave->dev, "active");
@@ -422,18 +552,24 @@ void sunxi_drm_dsi_encoder_atomic_enable(struct drm_encoder *encoder,
 		}
 		panel_dsi_regulator_enable(dsi->sdrm.panel);
 	} else {
+		if (dsi->dsc) {
+			tcon_lcd_dsc_src_sel();
+			dsi_timing_setup(dsi, &dsi->dsi_para.timings);
+			dsi->dsi_para.timings.x_res /= (bpp / dsi->dsc->bits_per_component);
+			dsi->dsi_para.timings.hor_total_time /= (bpp / dsi->dsc->bits_per_component);
+			dsi->dsi_para.timings.hor_back_porch /= (bpp / dsi->dsc->bits_per_component);
+			dsi->dsi_para.timings.hor_sync_time /= (bpp / dsi->dsc->bits_per_component);
+			dsc_config_pps(&dsi->dsi_lcd, dsi->dsc);
+			dec_dsc_config(&dsi->dsi_lcd, &dsi->dsi_para.timings);
+		}
 		if (dsi->phy) {
 			phy_power_on(dsi->phy);
 			phy_set_mode_ext(dsi->phy, PHY_MODE_MIPI_DPHY, PHY_SINGLE_ENABLE);
 			phy_configure(dsi->phy, &dsi->phy_opts);
-			if (dsi->displl_hs)
-				clk_set_rate(dsi->displl_hs, hs_clk_rate);
-			if (dsi->displl_ls)
-				clk_set_rate(dsi->displl_ls, ls_clk_rate);
-			if (dsi->displl_ls)
-				clk_prepare_enable(dsi->displl_ls);
 		}
+		dsi_cfg(&dsi->dsi_lcd, &dsi->dsi_para);
 		if (dsi->slave) {
+			dsi_cfg(&dsi->slave->dsi_lcd, &dsi->dsi_para);
 			if (dsi->slave->phy) {
 				phy_power_on(dsi->slave->phy);
 				phy_set_mode_ext(dsi->phy, PHY_MODE_MIPI_DPHY, PHY_DUAL_ENABLE);
@@ -442,6 +578,9 @@ void sunxi_drm_dsi_encoder_atomic_enable(struct drm_encoder *encoder,
 			}
 		}
 		drm_panel_prepare(dsi->sdrm.panel);
+
+		sunxi_dsi_displl_enable(dsi);
+
 		dsi_clk_enable(&dsi->dsi_lcd, &dsi->dsi_para, 1);
 		if (dsi->slave)
 			dsi_clk_enable(&dsi->slave->dsi_lcd, &dsi->dsi_para, 1);
@@ -449,9 +588,13 @@ void sunxi_drm_dsi_encoder_atomic_enable(struct drm_encoder *encoder,
 		ret = sunxi_dsi_enable_output(dsi);
 		if (ret < 0)
 			DRM_DEV_INFO(dsi->dev, "failed to enable dsi ouput\n");
+		if (dsi->dsi_para.mode_flags & (MIPI_DSI_ASYNC_INCELL | MIPI_DSI_SYNC_INCELL))
 #if IS_ENABLED (CONFIG_DRM_FBDEV_EMULATION)
-		if (dsi->dsi_para.mode_flags & MIPI_DSI_TO_INCELL)
-			dsi_notify_call_chain(INCELL_RESUME_FLAG);
+			dsi_notify_call_chain(SUNXI_PANEL_EVENT_UNBLANK,
+					dsi->dsi_para.mode_flags & MIPI_DSI_SYNC_INCELL);
+#else
+			sunxi_disp_notify_call_chain(SUNXI_PANEL_EVENT_UNBLANK,
+					dsi->dsi_para.mode_flags & MIPI_DSI_SYNC_INCELL);
 #endif
 	}
 	if (dsi->pending_enable_vblank) {
@@ -466,15 +609,33 @@ void sunxi_drm_dsi_encoder_atomic_disable(struct drm_encoder *encoder,
 					struct drm_atomic_state *state)
 {
 	struct sunxi_drm_dsi *dsi = encoder_to_sunxi_drm_dsi(encoder);
+	struct sunxi_crtc_state *scrtc_state = to_sunxi_crtc_state(encoder->crtc->state);
+
+	if (!dsi->enable) {
+		DRM_INFO("[DSI] isn't enabled\n");
+		return;
+	}
+
+	if (scrtc_state->frame_rate_change) {
+		DRM_DEBUG_DRIVER("[DSI] skip disable/enable for VRR modeset\n");
+		return;
+	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 	dsi->sdrm.panel->prepare_prev_first = false;
 #endif
+	if (dsi->dsi_para.mode_flags & (MIPI_DSI_ASYNC_INCELL | MIPI_DSI_SYNC_INCELL))
 #if IS_ENABLED (CONFIG_DRM_FBDEV_EMULATION)
-	if (dsi->dsi_para.mode_flags & MIPI_DSI_TO_INCELL)
-		dsi_notify_call_chain(INCELL_SUSPEND_FLAG);
+		dsi_notify_call_chain(SUNXI_PANEL_EVENT_BLANK,
+				dsi->dsi_para.mode_flags & MIPI_DSI_SYNC_INCELL);
+#else
+		sunxi_disp_notify_call_chain(SUNXI_PANEL_EVENT_BLANK,
+				dsi->dsi_para.mode_flags & MIPI_DSI_SYNC_INCELL);
 #endif
 	drm_panel_disable(dsi->sdrm.panel);
+
+	sunxi_dsi_displl_disable(dsi);
+
 	drm_panel_unprepare(dsi->sdrm.panel);
 
 	if (dsi->phy) {
@@ -506,7 +667,11 @@ static bool sunxi_dsi_fifo_check(void *data)
 {
 	struct sunxi_drm_dsi *dsi = (struct sunxi_drm_dsi *)data;
 	int status;
-	status = dsi_get_status(&dsi->dsi_lcd);
+
+	if (dsi->slave || (dsi->dsi_para.mode_flags & MIPI_DSI_SLAVE_MODE))
+		status = sunxi_tcon_check_fifo_status(dsi->sdrm.tcon_dev);
+	else
+		status = dsi_get_status(&dsi->dsi_lcd);
 
 	return status ? true : false;
 }
@@ -529,6 +694,7 @@ static bool sunxi_dsi_is_sync_time_enough(void *data)
 static void sunxi_dsi_enable_vblank(bool enable, void *data)
 {
 	struct sunxi_drm_dsi *dsi = (struct sunxi_drm_dsi *)data;
+
 	if (!dsi->enable) {
 		dsi->pending_enable_vblank = enable;
 		return;
@@ -538,6 +704,25 @@ static void sunxi_dsi_enable_vblank(bool enable, void *data)
 		sunxi_tcon_enable_vblank(dsi->sdrm.tcon_dev, enable);
 	else
 		dsi_enable_vblank(&dsi->dsi_lcd, enable);
+
+}
+
+static bool sunxi_dsi_is_support_backlight(void *data)
+{
+	struct sunxi_drm_dsi *dsi = (struct sunxi_drm_dsi *)data;
+	return panel_dsi_is_support_backlight(dsi->sdrm.panel);
+}
+
+static int sunxi_dsi_get_backlight_value(void *data)
+{
+	struct sunxi_drm_dsi *dsi = (struct sunxi_drm_dsi *)data;
+	return panel_dsi_get_backlight_value(dsi->sdrm.panel);
+}
+
+static void sunxi_dsi_set_backlight_value(void *data, int brightness)
+{
+	struct sunxi_drm_dsi *dsi = (struct sunxi_drm_dsi *)data;
+	panel_dsi_set_backlight_value(dsi->sdrm.panel, brightness);
 }
 
 int sunxi_drm_dsi_encoder_atomic_check(struct drm_encoder *encoder,
@@ -555,6 +740,9 @@ int sunxi_drm_dsi_encoder_atomic_check(struct drm_encoder *encoder,
 	scrtc_state->check_status = sunxi_dsi_fifo_check;
 	scrtc_state->is_sync_time_enough = sunxi_dsi_is_sync_time_enough;
 	scrtc_state->get_cur_line = sunxi_dsi_get_current_line;
+	scrtc_state->is_support_backlight = sunxi_dsi_is_support_backlight;
+	scrtc_state->get_backlight_value = sunxi_dsi_get_backlight_value;
+	scrtc_state->set_backlight_value = sunxi_dsi_set_backlight_value;
 	scrtc_state->output_dev_data = dsi;
 	if (conn_state->crtc) {
 		dsi->sw_enable = sunxi_drm_check_if_need_sw_enable(conn_state->connector);
@@ -571,7 +759,6 @@ static void sunxi_drm_dsi_encoder_mode_set(struct drm_encoder *encoder,
 	struct sunxi_drm_dsi *dsi = encoder_to_sunxi_drm_dsi(encoder);
 
 	drm_mode_copy(&dsi->mode, adj_mode);
-
 }
 /*
 static int sunxi_drm_dsi_encoder_loader_protect(struct drm_encoder *encoder,
@@ -734,6 +921,7 @@ static int sunxi_drm_dsi_host_attach(struct mipi_dsi_host *host,
 {
 	struct sunxi_drm_dsi *dsi = host_to_sunxi_drm_dsi(host);
 	struct drm_panel *panel = of_drm_find_panel(device->dev.of_node);
+	struct panel_dsi *dsi_panel = dev_get_drvdata(panel->dev);
 	int ret;
 
 	DRM_INFO("[DSI]%s start\n", __FUNCTION__);
@@ -746,6 +934,14 @@ static int sunxi_drm_dsi_host_attach(struct mipi_dsi_host *host,
 	dsi->dsi_para.mode_flags = device->mode_flags;
 	dsi->dsi_para.hs_rate = device->hs_rate;
 	dsi->dsi_para.lp_rate = device->lp_rate;
+	dsi->dsi_para.vrr_setp = dsi_panel->vrr_setp;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	if (device->dsc)
+		dsi->dsc = device->dsc;
+#else
+	if (dsi_panel->dsc)
+		dsi->dsc = dsi_panel->dsc;
+#endif
 
 	ret = component_add(dsi->dev, &sunxi_drm_dsi_component_ops);
 	if (ret) {
@@ -919,6 +1115,22 @@ static int sunxi_drm_dsi_probe(struct platform_device *pdev)
 	}
 
 	dsi->sdrm.hw_id = dsi->dsi_data->id;
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (res) {
+		dsi->dsc_base = (uintptr_t)devm_ioremap_resource(dev, res);
+		dsi->dsc_gating_clk = devm_clk_get(dev, "clk_bus_dsc");
+		if (IS_ERR(dsi->dsc_gating_clk)) {
+			DRM_ERROR("fail to get clk clk_bus_dsc\n");
+			return -EINVAL;
+		}
+		dsi->dsc_rst_clk = devm_reset_control_get_shared(dev, "rst_bus_dsc");
+		if (IS_ERR(dsi->dsc_rst_clk)) {
+			DRM_ERROR("fail to get reset rst_bus_dsc\n");
+			return -EINVAL;
+		}
+		dsc_set_reg_base(&dsi->dsi_lcd, dsi->dsc_base);
+	}
+
 	dsi->phy = devm_phy_get(dev, "combophy");
 	if (IS_ERR_OR_NULL(dsi->phy))
 		DRM_INFO("dsi%d's combophy not setting, maybe not used!\n", dsi->sdrm.hw_id);

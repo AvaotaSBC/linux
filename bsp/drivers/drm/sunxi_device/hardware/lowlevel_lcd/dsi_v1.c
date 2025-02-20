@@ -36,6 +36,12 @@ s32 dsi_set_reg_base(struct sunxi_dsi_lcd *dsi, uintptr_t base)
 	return 0;
 }
 
+s32 dsc_set_reg_base(struct sunxi_dsi_lcd *dsi, uintptr_t base)
+{
+	dsi->dsc_reg = (struct dsc_dsi_reg *) base;
+
+	return 0;
+}
 
 u32 dsi_get_reg_base(struct sunxi_dsi_lcd *dsi)
 {
@@ -47,6 +53,180 @@ u32 dsi_get_start_delay(struct sunxi_dsi_lcd *dsi)
 	return dsi->reg->dsi_basic_ctl1.bits.video_start_delay;
 }
 
+void dsc_config_pps(struct sunxi_dsi_lcd *dsi, const struct drm_dsc_config *dsc_cfg)
+{
+	dsi->dsc_reg->dsc_pps0_3.bits.bist_per_component = dsc_cfg->bits_per_component;
+	dsi->dsc_reg->dsc_pps0_3.bits.line_buffer_bits_depth = dsc_cfg->line_buf_depth;
+	dsi->dsc_reg->dsc_pps0_3.bits.ppsid = 0;
+	dsi->dsc_reg->dsc_pps0_3.bits.mjv = dsc_cfg->dsc_version_major;
+	dsi->dsc_reg->dsc_pps0_3.bits.mnv = dsc_cfg->dsc_version_minor;
+
+	dsi->dsc_reg->dsc_pps4_7.bits.pchl = dsc_cfg->pic_height & 0xff;
+	dsi->dsc_reg->dsc_pps4_7.bits.pchh = (dsc_cfg->pic_height >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps4_7.bits.bppl = dsc_cfg->bits_per_pixel & DSC_PPS_LSB_MASK;
+	dsi->dsc_reg->dsc_pps4_7.bits.bpph = (dsc_cfg->bits_per_pixel & DSC_PPS_BPP_HIGH_MASK) >> DSC_PPS_MSB_SHIFT;
+	dsi->dsc_reg->dsc_pps4_7.bits.bpe = dsc_cfg->block_pred_enable;
+	dsi->dsc_reg->dsc_pps4_7.bits.crgb = dsc_cfg->convert_rgb;
+	dsi->dsc_reg->dsc_pps4_7.bits.vbr = dsc_cfg->vbr_enable;
+
+	dsi->dsc_reg->dsc_pps8_11.bits.slhl = dsc_cfg->slice_height & 0xff;
+	dsi->dsc_reg->dsc_pps8_11.bits.slhh = (dsc_cfg->slice_height >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps8_11.bits.pcwl = dsc_cfg->pic_width & 0xff;
+	dsi->dsc_reg->dsc_pps8_11.bits.pcwh = (dsc_cfg->pic_width >> 8) & 0xff;
+
+	dsi->dsc_reg->dsc_pps12_15.bits.chsl = dsc_cfg->slice_chunk_size & 0xff;
+	dsi->dsc_reg->dsc_pps12_15.bits.chsh = (dsc_cfg->slice_chunk_size >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps12_15.bits.slwl = dsc_cfg->slice_width & 0xff;
+	dsi->dsc_reg->dsc_pps12_15.bits.slwh = (dsc_cfg->slice_width >> 8) & 0xff;
+
+	dsi->dsc_reg->dsc_pps16_19.bits.iddl =
+		dsc_cfg->initial_dec_delay & 0xff;
+	dsi->dsc_reg->dsc_pps16_19.bits.iddh =
+		(dsc_cfg->initial_dec_delay >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps16_19.bits.ixdl =
+		(dsc_cfg->initial_xmit_delay & DSC_PPS_LSB_MASK);
+	dsi->dsc_reg->dsc_pps16_19.bits.ixdh =
+		((dsc_cfg->initial_xmit_delay &
+		  DSC_PPS_INIT_XMIT_DELAY_HIGH_MASK) >>
+		 DSC_PPS_MSB_SHIFT);
+
+	dsi->dsc_reg->dsc_pps20_23.bits.siil =
+		dsc_cfg->scale_increment_interval & 0xff;
+	dsi->dsc_reg->dsc_pps20_23.bits.siih =
+		(dsc_cfg->scale_increment_interval >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps20_23.bits.isv = dsc_cfg->initial_scale_value;
+
+	dsi->dsc_reg->dsc_pps24_27.bits.fbo = dsc_cfg->first_line_bpg_offset;
+	dsi->dsc_reg->dsc_pps24_27.bits.sdil =
+		(dsc_cfg->scale_decrement_interval & DSC_PPS_LSB_MASK);
+	dsi->dsc_reg->dsc_pps24_27.bits.sdih =
+		((dsc_cfg->scale_decrement_interval &
+		DSC_PPS_SCALE_DEC_INT_HIGH_MASK) >>
+		DSC_PPS_MSB_SHIFT);
+
+	dsi->dsc_reg->dsc_pps28_31.bits.sbol = dsc_cfg->slice_bpg_offset & 0xff;
+	dsi->dsc_reg->dsc_pps28_31.bits.sboh =
+		(dsc_cfg->slice_bpg_offset >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps28_31.bits.nfbol = dsc_cfg->nfl_bpg_offset & 0xff;
+	dsi->dsc_reg->dsc_pps28_31.bits.nfboh =
+		(dsc_cfg->nfl_bpg_offset >> 8) & 0xff;
+
+	dsi->dsc_reg->dsc_pps32_35.bits.fnol = dsc_cfg->final_offset & 0xff;
+	dsi->dsc_reg->dsc_pps32_35.bits.fnoh = (dsc_cfg->final_offset >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps32_35.bits.inol = dsc_cfg->initial_offset & 0xff;
+	dsi->dsc_reg->dsc_pps32_35.bits.inoh = (dsc_cfg->initial_offset >> 8) & 0xff;
+
+	dsi->dsc_reg->dsc_pps36_39.bits.rcmsl = dsc_cfg->rc_model_size & 0xff;
+	dsi->dsc_reg->dsc_pps36_39.bits.rcmsh = (dsc_cfg->rc_model_size >> 8) & 0xff;
+	dsi->dsc_reg->dsc_pps36_39.bits.fmxq = dsc_cfg->flatness_max_qp;
+	dsi->dsc_reg->dsc_pps36_39.bits.fmnq = dsc_cfg->flatness_min_qp;
+
+	dsi->dsc_reg->dsc_pps40_43.bits.rctoh = DSC_RC_TGT_OFFSET_LO_CONST;
+	dsi->dsc_reg->dsc_pps40_43.bits.rctol = DSC_RC_TGT_OFFSET_HI_CONST;
+	dsi->dsc_reg->dsc_pps40_43.bits.rcqil1 = dsc_cfg->rc_quant_incr_limit1;
+	dsi->dsc_reg->dsc_pps40_43.bits.rcqil0 = dsc_cfg->rc_quant_incr_limit0;
+	dsi->dsc_reg->dsc_pps40_43.bits.rcef = DSC_RC_EDGE_FACTOR_CONST;
+
+	dsi->dsc_reg->dsc_pps44_47.bits.rcbt0 = dsc_cfg->rc_buf_thresh[0];
+	dsi->dsc_reg->dsc_pps44_47.bits.rcbt1 = dsc_cfg->rc_buf_thresh[1];
+	dsi->dsc_reg->dsc_pps44_47.bits.rcbt2 = dsc_cfg->rc_buf_thresh[2];
+	dsi->dsc_reg->dsc_pps44_47.bits.rcbt3 = dsc_cfg->rc_buf_thresh[3];
+
+	dsi->dsc_reg->dsc_pps48_51.bits.rcbt4 = dsc_cfg->rc_buf_thresh[4];
+	dsi->dsc_reg->dsc_pps48_51.bits.rcbt5 = dsc_cfg->rc_buf_thresh[5];
+	dsi->dsc_reg->dsc_pps48_51.bits.rcbt6 = dsc_cfg->rc_buf_thresh[6];
+	dsi->dsc_reg->dsc_pps48_51.bits.rcbt7 = dsc_cfg->rc_buf_thresh[7];
+
+	dsi->dsc_reg->dsc_pps52_55.bits.rcbt8 = dsc_cfg->rc_buf_thresh[8];
+	dsi->dsc_reg->dsc_pps52_55.bits.rcbt9 = dsc_cfg->rc_buf_thresh[9];
+	dsi->dsc_reg->dsc_pps52_55.bits.rcbt10 = dsc_cfg->rc_buf_thresh[10];
+	dsi->dsc_reg->dsc_pps52_55.bits.rcbt11 = dsc_cfg->rc_buf_thresh[11];
+
+	dsi->dsc_reg->dsc_pps56_59.bits.rcbt12 = dsc_cfg->rc_buf_thresh[12];
+	dsi->dsc_reg->dsc_pps56_59.bits.rcbt13 = dsc_cfg->rc_buf_thresh[13];
+	dsi->dsc_reg->dsc_pps56_59.bits.rcrp0_mnqrg = dsc_cfg->rc_range_params[0].range_min_qp;
+	dsi->dsc_reg->dsc_pps56_59.bits.rcrp0_mxqrg = dsc_cfg->rc_range_params[0].range_max_qp;
+	dsi->dsc_reg->dsc_pps56_59.bits.rcrp0_rgbpo = dsc_cfg->rc_range_params[0].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps60_63.bits.rcrp1_mnqrg = dsc_cfg->rc_range_params[1].range_min_qp;
+	dsi->dsc_reg->dsc_pps60_63.bits.rcrp1_mxqrg = dsc_cfg->rc_range_params[1].range_max_qp;
+	dsi->dsc_reg->dsc_pps60_63.bits.rcrp1_rgbpo = dsc_cfg->rc_range_params[1].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps60_63.bits.rcrp2_mnqrg = dsc_cfg->rc_range_params[2].range_min_qp;
+	dsi->dsc_reg->dsc_pps60_63.bits.rcrp2_mxqrg = dsc_cfg->rc_range_params[2].range_max_qp;
+	dsi->dsc_reg->dsc_pps60_63.bits.rcrp2_rgbpo = dsc_cfg->rc_range_params[2].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps64_67.bits.rcrp3_mnqrg = dsc_cfg->rc_range_params[3].range_min_qp;
+	dsi->dsc_reg->dsc_pps64_67.bits.rcrp3_mxqrg = dsc_cfg->rc_range_params[3].range_max_qp;
+	dsi->dsc_reg->dsc_pps64_67.bits.rcrp3_rgbpo = dsc_cfg->rc_range_params[3].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps64_67.bits.rcrp4_mnqrg = dsc_cfg->rc_range_params[4].range_min_qp;
+	dsi->dsc_reg->dsc_pps64_67.bits.rcrp4_mxqrg = dsc_cfg->rc_range_params[4].range_max_qp;
+	dsi->dsc_reg->dsc_pps64_67.bits.rcrp4_rgbpo = dsc_cfg->rc_range_params[4].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps68_71.bits.rcrp5_mnqrg = dsc_cfg->rc_range_params[5].range_min_qp;
+	dsi->dsc_reg->dsc_pps68_71.bits.rcrp5_mxqrg = dsc_cfg->rc_range_params[5].range_max_qp;
+	dsi->dsc_reg->dsc_pps68_71.bits.rcrp5_rgbpo = dsc_cfg->rc_range_params[5].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps68_71.bits.rcrp6_mnqrg = dsc_cfg->rc_range_params[6].range_min_qp;
+	dsi->dsc_reg->dsc_pps68_71.bits.rcrp6_mxqrg = dsc_cfg->rc_range_params[6].range_max_qp;
+	dsi->dsc_reg->dsc_pps68_71.bits.rcrp6_rgbpo = dsc_cfg->rc_range_params[6].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps72_75.bits.rcrp7_mnqrg = dsc_cfg->rc_range_params[7].range_min_qp;
+	dsi->dsc_reg->dsc_pps72_75.bits.rcrp7_mxqrg = dsc_cfg->rc_range_params[7].range_max_qp;
+	dsi->dsc_reg->dsc_pps72_75.bits.rcrp7_rgbpo = dsc_cfg->rc_range_params[7].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps72_75.bits.rcrp8_mnqrg = dsc_cfg->rc_range_params[8].range_min_qp;
+	dsi->dsc_reg->dsc_pps72_75.bits.rcrp8_mxqrg = dsc_cfg->rc_range_params[8].range_max_qp;
+	dsi->dsc_reg->dsc_pps72_75.bits.rcrp8_rgbpo = dsc_cfg->rc_range_params[8].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps76_79.bits.rcrp9_mnqrg = dsc_cfg->rc_range_params[9].range_min_qp;
+	dsi->dsc_reg->dsc_pps76_79.bits.rcrp9_mxqrg = dsc_cfg->rc_range_params[9].range_max_qp;
+	dsi->dsc_reg->dsc_pps76_79.bits.rcrp9_rgbpo = dsc_cfg->rc_range_params[9].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps76_79.bits.rcrp10_mnqrg = dsc_cfg->rc_range_params[10].range_min_qp;
+	dsi->dsc_reg->dsc_pps76_79.bits.rcrp10_mxqrg = dsc_cfg->rc_range_params[10].range_max_qp;
+	dsi->dsc_reg->dsc_pps76_79.bits.rcrp10_rgbpo = dsc_cfg->rc_range_params[10].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps80_83.bits.rcrp11_mnqrg = dsc_cfg->rc_range_params[11].range_min_qp;
+	dsi->dsc_reg->dsc_pps80_83.bits.rcrp11_mxqrg = dsc_cfg->rc_range_params[11].range_max_qp;
+	dsi->dsc_reg->dsc_pps80_83.bits.rcrp11_rgbpo = dsc_cfg->rc_range_params[11].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps80_83.bits.rcrp12_mnqrg = dsc_cfg->rc_range_params[12].range_min_qp;
+	dsi->dsc_reg->dsc_pps80_83.bits.rcrp12_mxqrg = dsc_cfg->rc_range_params[12].range_max_qp;
+	dsi->dsc_reg->dsc_pps80_83.bits.rcrp12_rgbpo = dsc_cfg->rc_range_params[12].range_bpg_offset;
+
+	dsi->dsc_reg->dsc_pps84_87.bits.rcrp13_mnqrg = dsc_cfg->rc_range_params[13].range_min_qp;
+	dsi->dsc_reg->dsc_pps84_87.bits.rcrp13_mxqrg = dsc_cfg->rc_range_params[13].range_max_qp;
+	dsi->dsc_reg->dsc_pps84_87.bits.rcrp13_rgbpo = dsc_cfg->rc_range_params[13].range_bpg_offset;
+	dsi->dsc_reg->dsc_pps84_87.bits.rcrp14_mnqrg = dsc_cfg->rc_range_params[14].range_min_qp;
+	dsi->dsc_reg->dsc_pps84_87.bits.rcrp14_mxqrg = dsc_cfg->rc_range_params[14].range_max_qp;
+	dsi->dsc_reg->dsc_pps84_87.bits.rcrp14_rgbpo = dsc_cfg->rc_range_params[14].range_bpg_offset;
+//	mdelay(500);
+}
+
+void dec_dsc_config(struct sunxi_dsi_lcd *dsi, struct disp_video_timings *timings)
+{
+	dsi->dsc_reg->dsc_ctrl0.bits.sbo = 1;
+	dsi->dsc_reg->dsc_ctrl0.bits.nslc = 1;  //??
+	dsi->dsc_reg->dsc_ctrl0.bits.epl = 1;
+	dsi->dsc_reg->dsc_ctrl0.bits.rbyt = 1;
+	dsi->dsc_reg->dsc_ctrl0.bits.rbit = 1;
+	dsi->dsc_reg->dsc_ctrl0.bits.flal = 0;
+	dsi->dsc_reg->dsc_ctrl0.bits.en = 1;
+
+	dsi->dsc_reg->dsc_ctrl1.bits.rbfth = 0x1000;
+
+	dsi->dsc_reg->dsc_blk0.bits.htotal = timings->hor_total_time;
+	dsi->dsc_reg->dsc_blk0.bits.ivpol = 1;
+	dsi->dsc_reg->dsc_blk0.bits.ihpol = 1;
+	dsi->dsc_reg->dsc_blk0.bits.hdly = 3;
+	dsi->dsc_reg->dsc_blk0.bits.hpc = 0;
+	dsi->dsc_reg->dsc_blk0.bits.bmod = 1;
+
+	dsi->dsc_reg->dsc_blk1.bits.hpar = (timings->hor_back_porch + timings->hor_sync_time);
+	dsi->dsc_reg->dsc_blk1.bits.hsync = timings->hor_sync_time;
+
+	dsi->dsc_reg->dsc_blk2.bits.vback = timings->ver_back_porch;
+	dsi->dsc_reg->dsc_blk2.bits.vfront = timings->ver_front_porch;
+	dsi->dsc_reg->dsc_blk2.bits.vsync = timings->ver_sync_time;
+
+	dsi->dsc_reg->dsc_ctrl0.bits.pps_update = 1;
+}
 static s32 dsi_start(struct sunxi_dsi_lcd *dsi, enum __dsi_start_t func)
 {
 	switch (func) {
@@ -169,6 +349,72 @@ static void dsi_read_mode_en(struct sunxi_dsi_lcd *dsi, u32 en)
 		dsi_start(dsi, DSI_START_HSTX);
 }
 
+int sunxi_dsi_updata_vt(struct sunxi_dsi_lcd *dsi, struct disp_video_timings *timings,
+				u32 vrr_setp)
+{
+	u32 step = vrr_setp ? vrr_setp : 30;
+	u32 vt = dsi->reg->dsi_basic_size1.bits.vt;
+	u32 curr_line;
+
+	if (timings->ver_total_time > vt) {
+		if (timings->ver_total_time <= (vt + step)) {
+			dsi->reg->dsi_basic_size1.bits.vt = timings->ver_total_time;
+			dsi->reg->dsi_basic_size0.bits.vbp = timings->ver_back_porch;
+			dsi->dsc_reg->dsc_blk2.bits.vback = timings->ver_back_porch;
+		//	dsi->dsc_reg->dsc_blk2.bits.vfront = vfp_t;
+			dsi->dsc_reg->dsc_ctrl0.bits.pps_update = 1;
+		} else {
+			dsi->reg->dsi_basic_size1.bits.vt += step;
+			dsi->reg->dsi_basic_size0.bits.vbp += step;
+			dsi->dsc_reg->dsc_blk2.bits.vback += step;
+		//	dsi->dsc_reg->dsc_blk2.bits.vfront += step;
+			dsi->dsc_reg->dsc_ctrl0.bits.pps_update = 1;
+		}
+	} else {
+		if (timings->ver_total_time >= (vt - step)) {
+			dsi->reg->dsi_basic_size1.bits.vt = timings->ver_total_time;
+			dsi->reg->dsi_basic_size0.bits.vbp = timings->ver_back_porch;
+			dsi->dsc_reg->dsc_blk2.bits.vback = timings->ver_back_porch;
+	//		dsi->dsc_reg->dsc_blk2.bits.vfront = vfp_t;
+			dsi->dsc_reg->dsc_ctrl0.bits.pps_update = 1;
+		} else {
+			dsi->reg->dsi_basic_size1.bits.vt -= step;
+			dsi->reg->dsi_basic_size0.bits.vbp -= step;
+			dsi->dsc_reg->dsc_blk2.bits.vback -= step;
+	//		dsi->dsc_reg->dsc_blk2.bits.vfront -= step;
+			dsi->dsc_reg->dsc_ctrl0.bits.pps_update = 1;
+		}
+	}
+	curr_line = dsi->reg->dsi_debug_video0.bits.video_curr_line;
+
+	return curr_line;
+}
+
+void sunxi_dsi_vrr_irq(struct sunxi_dsi_lcd *dsi, struct disp_video_timings *timings, bool enable)
+{
+	u32 line;
+	u32 curr_line = dsi->reg->dsi_debug_video0.bits.video_curr_line;
+	u32 vsa = dsi->reg->dsi_basic_size0.bits.vsa;
+	u32 vbp = dsi->reg->dsi_basic_size0.bits.vbp;
+	u32 y = dsi->reg->dsi_basic_size1.bits.vact;
+
+	if (enable) {
+		line = timings->ver_back_porch + timings->ver_sync_time + 100;
+		dsi->reg->dsi_gint1.bits.video_line_int_num = line;
+		dsi_irq_enable(dsi, DSI_IRQ_VIDEO_LINE);
+	} else {
+		if (curr_line < (vsa + vbp + y)) {
+			dsi->reg->dsi_basic_size1.bits.vt = timings->ver_total_time;
+			dsi_irq_disable(dsi, DSI_IRQ_VIDEO_LINE);
+		}
+	}
+}
+
+u32 dsi_get_real_cur_line(struct sunxi_dsi_lcd *dsi)
+{
+	return dsi->reg->dsi_debug_video0.bits.video_curr_line;
+}
+
 u32 dsi_get_cur_line(struct sunxi_dsi_lcd *dsi)
 {
 	u32 curr_line = dsi->reg->dsi_debug_video0.bits.video_curr_line;
@@ -261,16 +507,29 @@ __s32 dsi_mode_switch(struct sunxi_dsi_lcd *dsi, __u32 cmd_en, __u32 lp_en)
 	return 0;
 }
 
-/* 0: normal; -1:under flow; */
+/* 0: normal; -1:under flow;
+ *
+ * Quoting the dsi spec: TRANS_FAST_FALG: This bit is set when
+ * the transmit FIFO is empty while in the active region.
+ * Writing '1' clears this bit.
+ */
 s32 dsi_get_status(struct sunxi_dsi_lcd *dsi)
 {
-	if (dsi->reg->dsi_debug_inst.bits.trans_low_flag ||
-	    dsi->reg->dsi_debug_inst.bits.trans_fast_flag) {
-		dsi->reg->dsi_debug_inst.bits.trans_low_flag = 1;
+	if (dsi->reg->dsi_debug_inst.bits.trans_fast_flag) {
 		dsi->reg->dsi_debug_inst.bits.trans_fast_flag = 1;
 		return -1;
 	}
 	return 0;
+}
+
+/* 0: normal; -1:under flow;
+ *
+ * It may be a hardware bug, even when there is no missing frame,
+ * it will be 1, do not use it.
+ */
+s32 dsi_get_fifo_under_flow(struct sunxi_dsi_lcd *dsi)
+{
+	return dsi->reg->dsi_fifo_debug.bits.dsi_fifo_under_flow ? -1 : 0;
 }
 
 s32 dsi_tri_start(struct sunxi_dsi_lcd *dsi)
@@ -646,7 +905,7 @@ static s32 dsi_packet_cfg(struct sunxi_dsi_lcd *dsi, struct disp_dsi_para *para)
 		dsi->reg->dsi_pixel_ph.bits.vc = 0;
 		dsi->reg->dsi_pixel_ph.bits.dt = DSI_DT_DCS_LONG_WR;
 		dsi->reg->dsi_pixel_ph.bits.wc = 1 +
-		    para->timings.x_res * dsi_pixel_bits[para->format] / 8;
+			para->timings.x_res * dsi_pixel_bits[para->format] / 8;
 		dsi->reg->dsi_pixel_ph.bits.ecc =
 		    dsi_ecc_pro(dsi->reg->dsi_pixel_ph.dwval);
 		dsi->reg->dsi_pixel_pd.bits.pd_tran0 =
@@ -664,14 +923,13 @@ static s32 dsi_packet_cfg(struct sunxi_dsi_lcd *dsi, struct disp_dsi_para *para)
 		dsi->reg->dsi_pixel_ph.bits.dt =
 		    DSI_DT_PIXEL_RGB888 - 0x10 * para->format;
 		dsi->reg->dsi_pixel_ph.bits.wc =
-		    para->timings.x_res * dsi_pixel_bits[para->format] / 8;
+			para->timings.x_res * dsi_pixel_bits[para->format] / 8;
 		dsi->reg->dsi_pixel_ph.bits.ecc =
 		    dsi_ecc_pro(dsi->reg->dsi_pixel_ph.dwval);
 		dsi->reg->dsi_pixel_pf0.bits.crc_force = 0xffff;
 		dsi->reg->dsi_pixel_pf1.bits.crc_init_line0 = 0xffff;
 		dsi->reg->dsi_pixel_pf1.bits.crc_init_linen = 0xffff;
-		dsi->reg->dsi_pixel_ctl0.bits.pixel_format =
-		    8 + para->format;
+		dsi->reg->dsi_pixel_ctl0.bits.pixel_format = 8 + para->format;
 	}
 	if (para->mode_flags & MIPI_DSI_MODE_VIDEO) {
 		u32 dsi_hsa, dsi_hact, dsi_hbp, dsi_hfp, dsi_hblk, dsi_vblk;
@@ -852,6 +1110,7 @@ s32 dsi_cfg(struct sunxi_dsi_lcd *dsi, struct disp_dsi_para *dsi_para)
 {
 	dsi_basic_cfg(dsi, dsi_para);
 	dsi_packet_cfg(dsi, dsi_para);
+
 	return 0;
 }
 

@@ -29,18 +29,6 @@ enum sunxi_platform_version {
 	HDMI_SUN60I_W2_P1,
 };
 
-enum dw_log_index_e {
-	DW_LOG_INDEX_NUL   = 0,
-	DW_LOG_INDEX_VIDEO = 1,
-	DW_LOG_INDEX_AUDIO = 2,
-	DW_LOG_INDEX_EDID  = 3,
-	DW_LOG_INDEX_HDCP  = 4,
-	DW_LOG_INDEX_CEC   = 5,
-	DW_LOG_INDEX_PHY   = 6,
-	DW_LOG_INDEX_TRACE = 7,
-	DW_LOG_INDEX_MAX
-};
-
 typedef enum {
 	DW_PHY_ACCESS_NULL = 0,
 	DW_PHY_ACCESS_I2C  = 1,
@@ -636,7 +624,6 @@ struct dw_hdmi_dev_s {
 	u8          color_bits;
 	u8          hdmi_on;
 	u8          audio_on;
-	u8 			log_level;
 	u8			clock_src; /* 0:phypll, 1:ccmu */
 	int   		plat_id;
 	int 		sw_init;
@@ -682,7 +669,7 @@ struct dw_hdmi_dev_s {
 #endif
 #define hdcp_log(fmt, args...)                          \
 	do {                                                \
-		if (dw_hdmi_check_loglevel(DW_LOG_INDEX_HDCP))  \
+		if (dw_hdmi_get_loglevel())  \
 			DRM_INFO("sunxi-hdmi: [hdcp] "fmt, ##args); \
 	} while (0)
 
@@ -691,7 +678,7 @@ struct dw_hdmi_dev_s {
 #endif
 #define hdmi_trace(fmt, args...)                        \
 	do {                                                \
-		if (dw_hdmi_check_loglevel(DW_LOG_INDEX_TRACE)) \
+		if (dw_hdmi_get_loglevel()) \
 			DRM_INFO("sunxi-hdmi: "fmt, ##args);        \
 	} while (0)
 
@@ -807,13 +794,6 @@ u8 dw_hdmi_get_loglevel(void);
  * @level: log level
  */
 void dw_hdmi_set_loglevel(u8 level);
-/**
- * @desc: dw hdmi check current level is enable
- * @index: current log level index
- * @return: true - enable
- *         false - disable
- */
-bool dw_hdmi_check_loglevel(u8 index);
 /**
  * @desc: dw hdmi control params reset
  * @return: 0 - success
