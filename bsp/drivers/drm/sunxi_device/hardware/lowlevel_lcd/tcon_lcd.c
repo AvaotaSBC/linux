@@ -10,7 +10,7 @@
  * warranty of any kind, whether express or implied.
  */
 #include <linux/delay.h>
-
+#include <linux/io.h>
 #include "include.h"
 #include "tcon_lcd_type.h"
 #include "tcon_top.h"
@@ -276,6 +276,7 @@ s32 tcon_dsi_open(struct sunxi_tcon_lcd *tcon, struct disp_dsi_para *dsi_para)
 
 	tcon->reg->tcon0_ctl.bits.tcon0_en = 1;
 	msleep(100);
+
 	return 0;
 }
 
@@ -863,6 +864,82 @@ static s32 tcon_lcd_fsync_active_time(struct sunxi_tcon_lcd *tcon, u32 pixel_num
 	}
 
 	return 0;
+}
+
+int sunxi_tcon_updata_vt(struct sunxi_tcon_lcd *tcon, struct disp_video_timings *timings,
+				u32 vrr_setp)
+{
+	u32 vt_value;
+	struct disp_video_timings timing_t;
+	u32 step = vrr_setp ? vrr_setp : 30;
+	u32 vbp_bit_h, bit_num = 0;
+	u32 vbp = tcon->reg->tcon0_basic2.bits.vbp;
+
+	tcon_lcd_get_timing(tcon, &timing_t);
+	if (timings->ver_total_time > timing_t.ver_total_time) {
+		if (timings->ver_back_porch <= timing_t.ver_back_porch + step)
+			vbp_bit_h = timings->ver_back_porch + timing_t.ver_sync_time - 1;
+		else
+			vbp_bit_h = vbp + step;
+
+		while (vbp_bit_h) {
+			vbp_bit_h >>= 1;
+			bit_num++;
+		}
+		bit_num--;
+		vt_value = timing_t.ver_total_time + step;
+		if (timings->ver_total_time <= vt_value) {
+			tcon->reg->tcon0_basic2.bits.vt = timings->ver_total_time * 2;
+			tcon->reg->tcon0_basic2.bits.vbp = (1 << bit_num) | vbp;
+			tcon->reg->tcon0_basic2.bits.vbp = timings->ver_back_porch + timing_t.ver_sync_time - 1;
+			tcon_lcd_irq_disable(tcon, LCD_IRQ_TCON0_LINE);
+
+			return 1;
+		} else {
+			tcon->reg->tcon0_basic2.bits.vt = vt_value * 2;
+			tcon->reg->tcon0_basic2.bits.vbp = (1 << bit_num) | vbp;
+			tcon->reg->tcon0_basic2.bits.vbp = vbp + step;
+		}
+	} else {
+		if (timings->ver_back_porch >= timing_t.ver_back_porch - step)
+			vbp_bit_h = timings->ver_back_porch + timing_t.ver_sync_time - 1;
+		else
+			vbp_bit_h = vbp - step;
+		while (vbp_bit_h) {
+			vbp_bit_h >>= 1;
+			bit_num++;
+		}
+		bit_num--;
+		vt_value = timing_t.ver_total_time - step;
+		if (timings->ver_total_time >= vt_value) {
+			tcon->reg->tcon0_basic2.bits.vt = timings->ver_total_time * 2;
+			tcon->reg->tcon0_basic2.bits.vbp = (1 << bit_num) | vbp;
+			tcon->reg->tcon0_basic2.bits.vbp = timings->ver_back_porch + timing_t.ver_sync_time - 1;
+			tcon_lcd_irq_disable(tcon, LCD_IRQ_TCON0_LINE);
+
+			return 1;
+		} else {
+			tcon->reg->tcon0_basic2.bits.vt = vt_value * 2;
+			tcon->reg->tcon0_basic2.bits.vbp = (1 << bit_num) | vbp;
+			tcon->reg->tcon0_basic2.bits.vbp = vbp - step;
+		}
+	}
+
+	return 0;
+}
+
+bool tcon_lcd_vrr_irq(struct sunxi_tcon_lcd *tcon, bool enable)
+{
+	struct disp_video_timings timing_t;
+
+	tcon_lcd_get_timing(tcon, &timing_t);
+	if (enable) {
+		tcon->reg->tcon_gint1.bits.tcon0_line_int_num =
+					timing_t.ver_front_porch + 10;
+		tcon_lcd_irq_enable(tcon, LCD_IRQ_TCON0_LINE);
+	}
+
+	return false;
 }
 
 void tcon_lcd_enable_vblank(struct sunxi_tcon_lcd *tcon, bool enable)

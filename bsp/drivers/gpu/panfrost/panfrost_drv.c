@@ -706,6 +706,8 @@ static void __exit panfrost_driver_exit(void)
 	platform_driver_unregister(&panfrost_driver);
 }
 
+
+//module_platform_driver(panfrost_driver);
 late_initcall(panfrost_driver_init);
 module_exit(panfrost_driver_exit);
 

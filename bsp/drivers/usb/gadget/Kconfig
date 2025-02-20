@@ -22,6 +22,8 @@ menuconfig USB_SUNXI_GADGET
 
 source "bsp/drivers/usb/gadget/function/Kconfig"
 
+source "bsp/drivers/usb/gadget/legacy/Kconfig"
+
 endif # USB_GADGET
 
 endmenu

@@ -283,7 +283,7 @@ static void _inno_turn_resistor_ctrl(u8 state)
 	phy_base->hdmi_phy_dr0_0.bits.refres = state;
 
 	if (phy_dev.version != INNO_PHY_VERSION_0) {
-		// 0x00000100 off  0x00000033 on
+		/* 0x00000100 off  0x00000033 on */
 		*((u32 *)((void *)phy_base + 0x8004)) = 0x00000100;
 	}
 }
@@ -311,7 +311,7 @@ void _inno_phy_config_4k60(void)
 	phy_base->hdmi_phy_dr5_1.bits.terrescal_clkdiv1 = 0x0;//24M/240 = 100K
 
 	if (phy_dev.version == INNO_PHY_VERSION_0) {
-		//config resistance_div
+		/* config resistance_div */
 		phy_base->hdmi_phy_dr6_0.bits.clkterres_ndiv = 0x28;
 		phy_base->hdmi_phy_dr6_1.bits.ch2terres_ndiv = 0x28;
 		phy_base->hdmi_phy_dr6_2.bits.ch1terres_ndiv = 0x28;
@@ -335,19 +335,19 @@ void _inno_phy_config_4k60(void)
 
 void _inno_phy_config_4k30(void)
 {
-	// resence config
+	/* resence config */
 	phy_base->hdmi_phy_dr5_2.bits.terrescal_clkdiv0 = 0xF0;
 	phy_base->hdmi_phy_dr5_1.bits.terrescal_clkdiv1 = 0x0;//24M/240 = 100K
 
-	//config resistance 200
+	/* config resistance 200 */
 	phy_base->hdmi_phy_dr5_3.bits.terres_val = 0x3;
 
-	//configure channel control register
+	/* configure channel control register */
 	phy_base->hdmi_phy_dr5_3.bits.ch2_terrescal = 0x1;
 	phy_base->hdmi_phy_dr5_3.bits.ch1_terrescal = 0x1;
 	phy_base->hdmi_phy_dr5_3.bits.ch0_terrescal = 0x1;
 
-	//config the calibration by pass
+	/* config the calibration by pass */
 	phy_base->hdmi_phy_dr5_1.bits.terrescal_bp = 0x1;
 	udelay(5);
 	phy_base->hdmi_phy_dr5_1.bits.terrescal_bp = 0x0;
@@ -599,11 +599,11 @@ static int _inno_phy_config_flow(void)
 
 static void _inno_phy_reset(void)
 {
-	dw_phy_svsret();
+	dw_phy_config_svsret();
 
-	dw_mc_reset_phy(0);
+	dw_mc_sw_reset(DW_MC_SWRST_PHY, 0x0);
 	udelay(5);
-	dw_mc_reset_phy(1);
+	dw_mc_sw_reset(DW_MC_SWRST_PHY, 0x1);
 
 	_inno_phy_analog_reset();
 
