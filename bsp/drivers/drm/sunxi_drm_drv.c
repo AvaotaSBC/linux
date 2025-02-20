@@ -38,7 +38,12 @@
 #include "sunxi_drm_gem.h"
 #include "sunxi_drm_debug.h"
 
+#if defined(CONFIG_AW_DRM_ALIAS)
+#define DRIVER_NAME CONFIG_AW_DRM_ALIAS
+#else
 #define DRIVER_NAME "sunxi-drm"
+#endif
+
 #define DRIVER_DESC "allwinnertech SoC DRM"
 #define DRIVER_DATE "20230901"
 #define DRIVER_MAJOR 3
@@ -998,7 +1003,7 @@ static int sunxi_drm_procfs_status_show(struct seq_file *m, void *data)
 }
 static int sunxi_drm_procfs_create(void)
 {
-	proc_entry = proc_mkdir("sunxi-drm", NULL);
+	proc_entry = proc_mkdir(DRIVER_NAME, NULL);
 	if (IS_ERR_OR_NULL(proc_entry)) {
 		pr_err("Couldn't create sunxi-drm procfs directory !\n");
 		return -ENOMEM;
@@ -1019,7 +1024,7 @@ static int sunxi_drm_procfs_init(struct drm_device *drm)
 
 static void sunxi_drm_procfs_term(void)
 {
-	remove_proc_subtree("sunxi-drm", NULL);
+	remove_proc_subtree(DRIVER_NAME, NULL);
 	proc_entry = NULL;
 }
 
@@ -1174,7 +1179,7 @@ static struct platform_driver sunxi_drm_platform_driver = {
 	.remove = sunxi_drm_platform_remove,
 	.driver = {
 		.owner = THIS_MODULE,
-		.name = "sunxi-drm",
+		.name = DRIVER_NAME,
 		.of_match_table = sunxi_of_match,
 		.pm = &sunxi_drm_pm_ops,
 	},

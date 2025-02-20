@@ -29,7 +29,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/phy/phy.h>
 
-#include <../sunxi_usb/include/sunxi_usb_debug.h>
+#include "../sunxi_usb/include/sunxi_usb_debug.h"
 
 extern int usb_disabled(void);
 extern struct atomic_notifier_head usb_pm_notifier_list;

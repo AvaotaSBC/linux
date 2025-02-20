@@ -13,6 +13,13 @@ config AW_DRM
 	select VIDEOMODE_HELPERS
 	default n
 
+config AW_DRM_ALIAS
+	string "Set sunxi-drm driver alias"
+	depends on AW_DRM
+	default "sunxi-drm"
+	help
+		If you want to set sunxi-drm driver alias, edit this string.
+
 config AW_DRM_DE
 	bool "Support Sunxi Display_Engine(DE)"
 	depends on AW_DRM
